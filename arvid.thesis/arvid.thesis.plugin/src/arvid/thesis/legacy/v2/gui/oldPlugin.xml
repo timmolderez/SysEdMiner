@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension
+         point="org.eclipse.ui.menus">
+      <menuContribution
+            allPopups="false"
+            locationURI="popup:org.eclipse.jdt.ui.PackageExplorer">
+         <command
+               commandId="arvid.thesis.plugin.commands.mineBetweenFilesCommand"
+               icon="icons/mining.png"
+               style="push"
+               tooltip="Mine Change Patterns Between Files...">
+         </command>
+         <command
+               commandId="arvid.thesis.plugin.commands.mineCurrentGitRepoCommand"
+               icon="icons/mining.png"
+               style="push"
+               tooltip="Mine Current Git Repo...">
+         </command>
+      </menuContribution>
+      <menuContribution
+            locationURI="toolbar:org.eclipse.ui.main.toolbar?after=additions">
+         <toolbar
+               id="arvid.thesis.plugin.toolbars.thesisArvidToolbar">
+            <command
+                  commandId="arvid.thesis.plugin.commands.mineCurrentDocumentChangesCommand"
+                  icon="icons/mining.png"
+                  tooltip="Mine Change Patterns in Unsaved Current Document Changes">
+            </command>
+         </toolbar>
+      </menuContribution>
+   </extension>
+   <extension
+         point="org.eclipse.ui.handlers">
+      <handler
+            class="arvid.thesis.plugin.gui.MineBetweenFilesCommandHandler"
+            commandId="arvid.thesis.plugin.commands.mineBetweenFilesCommand">
+            <enabledWhen> 
+               <with variable="activeMenuSelection">
+        			<count value="2"/>
+                  <iterate ifEmpty="false" operator="and">
+                     <adapt type="org.eclipse.jdt.core.ICompilationUnit">
+                     </adapt>
+                  </iterate>
+               </with>
+            </enabledWhen>
+      </handler>
+      <handler
+            class="arvid.thesis.plugin.gui.MineCurrentDocumentChangesCommandHandler"
+            commandId="arvid.thesis.plugin.commands.mineCurrentDocumentChangesCommand">
+      </handler>
+      <handler
+            class="arvid.thesis.plugin.gui.MineCurrentGitRepoCommandHandler"
+            commandId="arvid.thesis.plugin.commands.mineCurrentGitRepoCommand">
+            <enabledWhen>
+               <with variable="activeMenuSelection">
+        		  <count value="1"/>
+                  <iterate ifEmpty="false" operator="and">
+                     <adapt type="org.eclipse.jdt.core.IJavaProject">
+                     </adapt>
+                  </iterate>
+               </with>
+            </enabledWhen>
+      </handler>
+   </extension>
+   <extension
+         point="org.eclipse.ui.commands">
+      <command
+            categoryId="arvid.thesis.plugin.commands.category"
+            id="arvid.thesis.plugin.commands.mineBetweenFilesCommand"
+            name="Mine Change Patterns Between Files...">
+      </command>
+      <command
+            categoryId="arvid.thesis.plugin.commands.category"
+            id="arvid.thesis.plugin.commands.mineCurrentDocumentChangesCommand"
+            name="Mine Change Patterns in Unsaved Current Document ChangesMine Change Patterns in Unsaved Current Document Changes...">
+      </command>
+      <category
+            id="arvid.thesis.plugin.commands.category"
+            name="Thesis Arvid">
+      </category>
+      <command
+            categoryId="arvid.thesis.plugin.commands.category"
+            id="arvid.thesis.plugin.commands.mineCurrentGitRepoCommand"
+            name="Mine Current Git Repo...">
+      </command>
+   </extension>
+
+</plugin>
