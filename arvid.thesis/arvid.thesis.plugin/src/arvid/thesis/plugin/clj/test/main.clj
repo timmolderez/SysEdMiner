@@ -1,10 +1,12 @@
 (ns 
   ^{:doc "Sandbox to figure out how the change pattern miner works.."
-  :author "Tim Molderez"}
+    :author "Tim Molderez"}
   arvid.thesis.plugin.clj.test.main
-  (:require [arvid.thesis.plugin.clj.git.repository :as repo])
-  (:require [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac])
-  (:require [arvid.thesis.plugin.clj.main :as main]))
+  (:require 
+    [arvid.thesis.plugin.clj.git.repository :as repo]
+    [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
+    [arvid.thesis.plugin.clj.main :as main]
+    [clojure.java.shell :as sh]))
 
 (def tpvision-repos
   ; Retrieve a list of all paths to TP Vision's git repositories (on the local filesystem)
@@ -14,6 +16,9 @@
             rdr (clojure.java.io/reader (str root-path "repos.txt"))]
         (for [line (line-seq rdr)]
           (str root-path line))))))
+
+(def output-dir 
+  "/Users/soft/desktop/tpv-freqchanges/")
 
 (defn append
   "Appends a line of text to a file"
@@ -82,10 +87,6 @@
   (let [all-commits (repo/get-commits repo-path)
         commit-no (count all-commits)
         commits (take-last (- commit-no start-idx) all-commits)
-;        commits (if (= limit 0)
-;                  all-commits
-;                  (take limit all-commits))
-        strategy (stratfac/make-strategy)
         min-support 3
         verbosity 1]
     (map-indexed 
@@ -97,23 +98,59 @@
 ;      (mine-commit commit strategy min-support verbosity results-path))
     ))
 
+(defn analyse-repository
+  "Look for change patterns across all commits in a repository"
+  [repo-path strategy]
+  (let [all-commits (repo/get-commits repo-path)
+        commit-no (count all-commits)
+        split-path (clojure.string/split repo-path #"/") 
+        repo-name (nth split-path (- (count split-path) 2))
+        pattern-folder (str output-dir repo-name "/")
+        batch-size 200]
+    (.mkdir (java.io.File. pattern-folder))
+    (dotimes [i (Math/ceil (/ commit-no batch-size))]
+      (let [start-commit (* i batch-size)]
+        (analyse-commits repo-path (str pattern-folder "patterns-" i ".txt")
+                         strategy start-commit)))))
+
+(defn open-commit
+  "Retrieve the diff of a commit, store it to file, and open it in a text editor"
+  [repo-path commit]
+  (let [diff (:out (sh/sh "git" "show" commit :dir (str repo-path "/..")))
+        file-path (str output-dir "commits/" commit ".txt")]
+    (spit file-path diff)
+    (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str commit ".txt") :dir (str output-dir "commits/"))))
+
+(open-commit git-path "a26242502931474621b7638435f099c77daa1867")
+
+;(analyse-repository git-path (stratfac/make-strategy))
+
 (defn build-support-map [init-support-map results-path]
+  "Append to"
   (with-open [rdr (clojure.java.io/reader results-path)]
     (let [lines (line-seq rdr)]
       (loop [line (first lines) 
              rest-lines (rest lines) 
-             support-map init-support-map]
+             support-map init-support-map
+             commit nil]
         (if (empty? rest-lines)
           support-map
-          (if (.startsWith line "Support")
+          (cond
+            ; Update the current commit ID
+            (.startsWith line "CommitID")
+            (let [new-commit (second (clojure.string/split line #" "))]
+              (recur (first rest-lines) (rest rest-lines) support-map new-commit))
+            
             ; Update the support map
+            (.startsWith line "Support")
             (let [supp (java.lang.Integer/parseInt (second (clojure.string/split line #":")))
                   length (count (clojure.string/split (first rest-lines) #" ")) ; Count number of entries in the ChangeTypes: line
                   cur-val (if (nil? (get support-map supp))
-                            {:count 0 :avg-length 0 :max-length 0}
+                            {:commits #{} :count 0 :avg-length 0 :max-length 0}
                             (get support-map supp))
                   cnt (:count cur-val)
-                  new-val {:count (inc cnt)
+                  new-val {:commits (conj (:commits cur-val) commit)
+                           :count (inc cnt)
                            :avg-length (if (= cnt 0)
                                          length
                                          (+
@@ -123,35 +160,26 @@
                                          length
                                          (:max-length cur-val))}
                   ]
-              (recur (second rest-lines) (rest (rest rest-lines))
-                     (assoc support-map supp new-val)))
-            
-            ; Otherwise, just skip this line
-            (recur (first rest-lines) (rest rest-lines) support-map))
-          )))))
-
-;(defn spit-change [filepath change]
-;  (binding [*print-dup* true]
-;    (spit filepath (pr-str change))))
-;
-;(defn
-;  slurp-change
-;  [filepath]
-;  (binding [*read-eval* true]
-;    (read-string (slurp filepath))))
+              (recur (second rest-lines)(rest (rest rest-lines))
+                     (assoc support-map supp new-val) commit))
+            :else
+            (recur (first rest-lines) (rest rest-lines) support-map commit)))))))
 
 (comment
   
   ; Pretty-print the entire support map
   (def supp-map
-    (-> (build-support-map {} "/Users/soft/desktop/tpv-freqchanges/freqchanges.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd2.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd3.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd4.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd5.txt")
-     (build-support-map "/Users/soft/desktop/freqchanges-contd6.txt")
-     ))
+    (-> (build-support-map {} (str output-dir "freqchanges.txt"))
+     (build-support-map (str output-dir "freqchanges-contd.txt"))
+     (build-support-map (str output-dir "freqchanges-contd2.txt"))
+     (build-support-map (str output-dir "freqchanges-contd3.txt"))
+     (build-support-map (str output-dir "freqchanges-contd4.txt"))
+     (build-support-map (str output-dir "freqchanges-contd5.txt"))
+     (build-support-map (str output-dir "freqchanges-contd6.txt"))))
+  
+  (inspector-jay.core/inspect (build-support-map {} (str output-dir "freqchanges.txt")))
+  
+  (println (:out (sh/sh "open" "-e" "freqchanges.txt" :dir "/Users/soft/desktop/tpv-freqchanges/")))
   
   (doseq [support (sort (keys supp-map))]
     (let [val (get supp-map support)]
@@ -161,7 +189,7 @@
   
   (count (repo/get-commits git-path))
   
-  (inspector-jay.core/inspect (repo/get-commits git-path))
+  ; Find commit with a certain message
   (.indexOf (repo/get-commits git-path)
     (first (repo/get-commits git-path (fn [msg] (.startsWith msg "IPEPG Removed for TVJAR movement")))))
   
