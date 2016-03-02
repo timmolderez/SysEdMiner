@@ -92,11 +92,18 @@
     (map-indexed 
       (fn [idx commit]
         (println "Processing commit" (+ start-idx idx) "/" commit-no)
-        (mine-commit commit strategy min-support verbosity results-path))
-      commits)
-;    (for [commit commits]
-;      (mine-commit commit strategy min-support verbosity results-path))
-    ))
+        (try 
+          (mine-commit commit strategy min-support verbosity results-path)
+          (catch Exception e
+            (do
+              (println "!! Failed to process commit" (+ start-idx idx) "/" commit-no)
+              (.printStackTrace e)))))
+      commits)))
+
+(defn- repo-name-from-path
+  [repo-path]
+  (let [split-path (clojure.string/split repo-path #"/")]
+    (nth split-path (- (count split-path) 2))))
 
 (defn analyse-repository
   "Look for change patterns across all commits in a repository"
@@ -117,16 +124,15 @@
   "Retrieve the diff of a commit, store it to file, and open it in a text editor"
   [repo-path commit]
   (let [diff (:out (sh/sh "git" "show" commit :dir (str repo-path "/..")))
-        file-path (str output-dir "commits/" commit ".txt")]
+        file-path (str output-dir "commits/" commit ".diff")]
     (spit file-path diff)
-    (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str commit ".txt") :dir (str output-dir "commits/"))))
-
-(open-commit git-path "a26242502931474621b7638435f099c77daa1867")
-
-;(analyse-repository git-path (stratfac/make-strategy))
+    (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str commit ".diff") :dir (str output-dir "commits/"))))
 
 (defn build-support-map [init-support-map results-path]
-  "Append to"
+  "Produce a support map, which maps each support level to
+   various information regarding all frequent patterns that have this support level.
+   @param init-support-map  The produced support map is merged with this one.
+   @param results-path      Path to a file produced by analyse-commits"
   (with-open [rdr (clojure.java.io/reader results-path)]
     (let [lines (line-seq rdr)]
       (loop [line (first lines) 
@@ -165,28 +171,38 @@
             :else
             (recur (first rest-lines) (rest rest-lines) support-map commit)))))))
 
+(defn repo-support-map
+  [repo-path]
+  (let [repo-name (repo-name-from-path repo-path)
+        pattern-folder (str output-dir repo-name "/")]
+    (loop [i 0
+           support-map {}]
+      (let [pattern-file (str pattern-folder "patterns-" i ".txt")]
+        (if (.exists (clojure.java.io/as-file pattern-file))
+          (let [new-support-map (build-support-map support-map pattern-file)]
+            (recur (inc i) new-support-map))
+          support-map)))))
+
+
+
 (comment
+  (def git-path (nth (tpvision-repos) 1))
+  (analyze-repository git-path )
   
   ; Pretty-print the entire support map
-  (def supp-map
-    (-> (build-support-map {} (str output-dir "freqchanges.txt"))
-     (build-support-map (str output-dir "freqchanges-contd.txt"))
-     (build-support-map (str output-dir "freqchanges-contd2.txt"))
-     (build-support-map (str output-dir "freqchanges-contd3.txt"))
-     (build-support-map (str output-dir "freqchanges-contd4.txt"))
-     (build-support-map (str output-dir "freqchanges-contd5.txt"))
-     (build-support-map (str output-dir "freqchanges-contd6.txt"))))
-  
-  (inspector-jay.core/inspect (build-support-map {} (str output-dir "freqchanges.txt")))
-  
-  (println (:out (sh/sh "open" "-e" "freqchanges.txt" :dir "/Users/soft/desktop/tpv-freqchanges/")))
+  (def supp-map (repo-support-map git-path))
   
   (doseq [support (sort (keys supp-map))]
     (let [val (get supp-map support)]
       (println support "," (:count val) "," (double (:avg-length val)) "," (:max-length val))))
   
-  (def git-path (nth (tpvision-repos) 1))
+  (inspector-jay.core/inspect supp-map)
   
+  ; Open up all commits of a certain support level
+  (doseq [commit (:commits (get supp-map 21))]
+    (open-commit git-path commit))
+
+  ; Total number of commits
   (count (repo/get-commits git-path))
   
   ; Find commit with a certain message
@@ -199,11 +215,4 @@
     git-path
     "/Users/soft/desktop/freqchanges-contd6.txt"
     (stratfac/make-strategy)
-    1410)
-  
-  (inspector-jay.core/inspect (repo/get-commits "/Users/soft/Documents/Github/Return_from_the_Void/.git"))
-  (let [repo "/Users/soft/Documents/Github/Return_from_the_Void/.git"
-        commit-message "Add sendMessage to service, keep track of open chats."
-        strategy (stratfac/make-strategy)
-        min-support 3
-        verbosity 0]))
+    1410))
