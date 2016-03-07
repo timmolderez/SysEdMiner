@@ -1,12 +1,18 @@
 (ns 
-  ^{:doc "Sandbox to figure out how the change pattern miner works.."
+  ^{:doc "Helper functions to run the Frequent change pattern minor on entire git repositories, and inspect the results"
     :author "Tim Molderez"}
   arvid.thesis.plugin.clj.test.main
   (:require 
     [arvid.thesis.plugin.clj.git.repository :as repo]
     [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
     [arvid.thesis.plugin.clj.main :as main]
-    [clojure.java.shell :as sh]))
+    [arvid.thesis.plugin.clj.preprocess.grouping.group :as group]
+    [clojure.java.shell :as sh]
+    [qwalkeko.clj.functionalnodes :as qwal]
+    [damp.ekeko.jdt.astnode :as astnode]
+    )
+  (:import
+    [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block]))
 
 (def tpvision-repos
   ; Retrieve a list of all paths to TP Vision's git repositories (on the local filesystem)
@@ -36,7 +42,6 @@
   (let [file-filter (fn [filename] true)
         changes (main/get-changes-in-commit commit file-filter verbosity)
         patterns (main/mine-changes changes strategy min-support verbosity)]
-    
     ; Update results file if any patterns are found
     (if (not (empty? (:patterns-list  patterns)))
       (do 
@@ -65,6 +70,12 @@
                                           " "
                                           (for [change (:changes group)]
                                             (.indexOf changes change)))))
+              (doseq [change (:changes group)]
+                (append results-path (str "ChangePath-" (.indexOf changes change) ":"
+                                          (clojure.string/join 
+                                            " "
+                                            (for [element (group/get-path-of-change group change)]
+                                              (.toString element))))))
               (append results-path (str "ChangeNodeTypes:" 
                                         (clojure.string/join 
                                           " "
@@ -74,8 +85,21 @@
               ))
           (append results-path "======")
           )))
-    [changes
-     (main/mine-changes changes strategy min-support verbosity)]))
+    [changes patterns]))
+
+(defn find-commit-by-id [repo-path commit-id]
+  (let [all-commits (repo/get-commits repo-path)
+        commit (some
+                 (fn [commit]
+                   (if (.contains (.toString (:jgit-commit commit)) commit-id)
+                     commit))
+                 all-commits)]
+    commit))
+
+(defn get-changes-by-commit-id [repo-path commit-id]
+  (main/get-changes-in-commit 
+    (find-commit-by-id repo-path commit-id) 
+    (fn [f] true) 1))
 
 (defn analyse-commits
   "Look for change patterns in multiple commits
@@ -101,6 +125,7 @@
       commits)))
 
 (defn- repo-name-from-path
+  "Extract the git repository name from the path to its .git directory"
   [repo-path]
   (let [split-path (clojure.string/split repo-path #"/")]
     (nth split-path (- (count split-path) 2))))
@@ -109,24 +134,39 @@
   "Look for change patterns across all commits in a repository"
   [repo-path strategy]
   (let [all-commits (repo/get-commits repo-path)
-        commit-no (count all-commits)
-        split-path (clojure.string/split repo-path #"/") 
-        repo-name (nth split-path (- (count split-path) 2))
+        commit-no (count all-commits) 
+        repo-name (repo-name-from-path repo-path)
         pattern-folder (str output-dir repo-name "/")
         batch-size 200]
     (.mkdir (java.io.File. pattern-folder))
     (dotimes [i (Math/ceil (/ commit-no batch-size))]
       (let [start-commit (* i batch-size)]
-        (analyse-commits repo-path (str pattern-folder "patterns-" i ".txt")
-                         strategy start-commit)))))
+        (doall (analyse-commits repo-path (str pattern-folder "patterns-" i ".txt")
+                               strategy start-commit))))))
 
 (defn open-commit
   "Retrieve the diff of a commit, store it to file, and open it in a text editor"
   [repo-path commit]
-  (let [diff (:out (sh/sh "git" "show" commit :dir (str repo-path "/..")))
+  (let [diff (:out (sh/sh "git" "show" commit "-U100" :dir (str repo-path "/..")))
         file-path (str output-dir "commits/" commit ".diff")]
     (spit file-path diff)
     (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str commit ".diff") :dir (str output-dir "commits/"))))
+
+(defn open-class-in-commit
+  "Retrieve the diff of a commit, store it to file, and open it in a text editor"
+  [repo-path commit class-name]
+  (let [short-name (last (clojure.string/split class-name #"\."))
+        class-file (str "src/"
+                        (clojure.string/replace class-name #"\." "/")
+                        ".java")
+        
+        
+        file-contents (:out (sh/sh "git" "show" (str commit ":" class-file) :dir (str repo-path "/..")))
+        file-path (str output-dir "files/" short-name ".java")]
+    (spit file-path file-contents)
+    (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str short-name ".java") :dir (str output-dir "files/"))))
+
+;(open-class-in-commit git-path "bfead7403d778a662a1fd4dda85067cafce00a01" "org.droidtv.epg.bcepg.epgui.NowNextOverview")
 
 (defn build-support-map [init-support-map results-path]
   "Produce a support map, which maps each support level to
@@ -138,6 +178,9 @@
       (loop [line (first lines) 
              rest-lines (rest lines) 
              support-map init-support-map
+             pattern {}
+             instance {}
+             support 0
              commit nil]
         (if (empty? rest-lines)
           support-map
@@ -145,14 +188,13 @@
             ; Update the current commit ID
             (.startsWith line "CommitID")
             (let [new-commit (second (clojure.string/split line #" "))]
-              (recur (first rest-lines) (rest rest-lines) support-map new-commit))
+              (recur (first rest-lines) (rest rest-lines) support-map pattern instance support new-commit))
             
-            ; Update the support map
             (.startsWith line "Support")
             (let [supp (java.lang.Integer/parseInt (second (clojure.string/split line #":")))
                   length (count (clojure.string/split (first rest-lines) #" ")) ; Count number of entries in the ChangeTypes: line
                   cur-val (if (nil? (get support-map supp))
-                            {:commits #{} :count 0 :avg-length 0 :max-length 0}
+                            {:commits #{} :count 0 :avg-length 0 :max-length 0 :patterns []}
                             (get support-map supp))
                   cnt (:count cur-val)
                   new-val {:commits (conj (:commits cur-val) commit)
@@ -164,14 +206,52 @@
                                            (* (/ 1 cnt) length)))
                            :max-length (if (> length (:max-length cur-val))
                                          length
-                                         (:max-length cur-val))}
+                                         (:max-length cur-val))
+                           :patterns (:patterns cur-val)}
                   ]
-              (recur (second rest-lines)(rest (rest rest-lines))
-                     (assoc support-map supp new-val) commit))
+              (recur (first rest-lines) (rest rest-lines) (assoc support-map supp new-val) pattern instance supp commit))
+            
+            (.startsWith line "ChangeTypes")
+            (let [change-types (clojure.string/split
+                                 (second (clojure.string/split line #":")) 
+                                 #" ")]
+              (recur (first rest-lines) (rest rest-lines) support-map (assoc pattern :change-types change-types) instance support commit))
+            
+            (.startsWith line "ContainerMethod")
+            (let [container-method (second (clojure.string/split line #":"))]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-method container-method) support commit))
+            
+            (.startsWith line "ChangeIDs")
+            (let [changeids (map
+                              (fn [str] (java.lang.Integer/parseInt str))
+                              (clojure.string/split
+                                (second (clojure.string/split line #":")) 
+                                #" "))]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-ids changeids) support commit))
+            
+            ; Disabled for quicker browsing..
+;            (.startsWith line "ChangeNodeTypes")
+;            (let [change-node-types (clojure.string/split
+;                                      (second (clojure.string/split line #":")) 
+;                                      #" ")]
+;              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-node-types change-node-types) support commit))
+            
+            ; End of a pattern instance; flush the current instance to the current pattern
+            (.startsWith line "------")
+            (recur (first rest-lines) (rest rest-lines) support-map (assoc pattern :instances (conj (pattern :instances) instance)) {} support commit)
+            
+            ; End of a pattern; flush the current pattern to the support map
+            (.startsWith line "======")
+            (let [cur-patterns (:patterns (get support-map support))
+                  new-patterns (conj cur-patterns (assoc pattern :commit commit))
+                  new-pattern-map (assoc (get support-map support) :patterns new-patterns)]
+              (recur (first rest-lines) (rest rest-lines) (assoc support-map support new-pattern-map) {} {} 0 commit))
+            
             :else
-            (recur (first rest-lines) (rest rest-lines) support-map commit)))))))
+            (recur (first rest-lines) (rest rest-lines) support-map pattern instance support commit)))))))
 
 (defn repo-support-map
+  "Reads all result files produced by analyze-repository"
   [repo-path]
   (let [repo-name (repo-name-from-path repo-path)
         pattern-folder (str output-dir repo-name "/")]
@@ -183,11 +263,57 @@
             (recur (inc i) new-support-map))
           support-map)))))
 
+(defn find-root-change
+  "In case a change is nested, find the root change
+   , as well as the path relating the root change to the change"
+  [change all-changes]
+  (if (and (= (:operation change) :insert) (nil? (:original change)))
+    (loop [current (:copy change)
+           path []]
+	   (if (nil? current)
+         nil ; Shouldn't happen
+         (let [current-change (first (filter (fn [change] (and (= (:copy change) current) (not (nil? (:original change))))) all-changes))]
+           (if current-change
+		           [current-change path]
+		           (recur (damp.ekeko.jdt.astnode/owner current)
+                    (let [^ASTNode parent (damp.ekeko.jdt.astnode/owner current)
+                          lip (.getLocationInParent current)
+                          index (if (instance? ChildListPropertyDescriptor lip)
+                                  (.indexOf  ^java.util.AbstractList (.getStructuralProperty parent lip) current))]
+                      (cons [lip index] path))
+                    
+                    )))))
+    [change []]))
 
+(defn locate-change-in-body [change changes]
+  (let [node (if (= (:operation change) :insert)
+               (let [[root-change path] (find-root-change change changes)
+                     copy (:copy root-change)]
+                 (damp.ekeko.jdt.astnode/node-from-path copy path))
+               (:original change))
+        path (astnode/path-from-root node)
+        stmt-index (loop [cur node]
+                     (let [parent (astnode/owner cur)]
+                       (if (nil? parent)
+                         -1
+                         (let [grandparent (astnode/owner parent)]
+                           (if (and (instance? MethodDeclaration grandparent) (instance? Block parent))
+                             (let [lip (.getLocationInParent cur)
+                                   index (.indexOf  ^java.util.AbstractList (.getStructuralProperty parent lip) cur)]
+                               index)
+                             (recur (astnode/owner cur))))))
+                     )]
+    [stmt-index node path]
+    ))
 
 (comment
-  (def git-path (nth (tpvision-repos) 1))
-  (analyze-repository git-path )
+  (def git-path (nth (tpvision-repos) 4))
+  (count (repo/get-commits git-path))
+  (repo-name-from-path git-path)
+  
+  ; Analyse an entire repository (in a separate thread)
+  (damp.ekeko.snippets.util/future-group nil 
+    (analyse-repository git-path (stratfac/make-strategy))) 
   
   ; Pretty-print the entire support map
   (def supp-map (repo-support-map git-path))
@@ -199,20 +325,45 @@
   (inspector-jay.core/inspect supp-map)
   
   ; Open up all commits of a certain support level
-  (doseq [commit (:commits (get supp-map 21))]
+  (doseq [commit (:commits (get supp-map 15))]
     (open-commit git-path commit))
 
-  ; Total number of commits
-  (count (repo/get-commits git-path))
-  
   ; Find commit with a certain message
   (.indexOf (repo/get-commits git-path)
-    (first (repo/get-commits git-path (fn [msg] (.startsWith msg "IPEPG Removed for TVJAR movement")))))
+    (first (repo/get-commits git-path (fn [msg] (.startsWith msg "Dapq Face recognisation change")))))
+  
+  (inspector-jay.core/inspect (repo/get-commits git-path))
   
   (def changes (main/get-changes-in-commit (nth (repo/get-commits git-path) 7) (fn [f] true) 2))
+  (inspector-jay.core/inspect changes)
   
+  ; Get the changes of a specific commit
+  (def changes (get-changes-by-commit-id git-path "42bea6059847ef149c6296de315ca696f013a49e"))
+  (damp.ekeko.jdt.astnode/path-from-root (:original (nth changes 3)))
+  
+  ; Analyze a range of commits
   (analyse-commits 
     git-path
     "/Users/soft/desktop/freqchanges-contd6.txt"
     (stratfac/make-strategy)
-    1410))
+    200)
+  
+  (mine-commit
+    (find-commit-by-id git-path "240f127f65b6814a00c51538240ff54dd1d42ee8")
+    (stratfac/make-strategy)
+    3
+    1
+    "/Users/soft/desktop/test2.txt")
+  
+  (analyse-commits git-path "/Users/soft/desktop/tpv-freqchanges/ambihue/patterns-0.txt"
+                         (stratfac/make-strategy) 200)
+  
+  ; Nested insert
+  ;(inspector-jay.core/inspect (locate-change-in-body (nth changes 44) changes))
+  ; Nested delete
+  ;(inspector-jay.core/inspect (find-root-change (nth changes 747) changes))
+  
+  ; Create change dependency graph
+  (time (def deps (qwal/create-dependency-graph {:changes changes})))
+  (qwal/changes->graph {:changes changes})
+  )
