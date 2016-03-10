@@ -14,14 +14,12 @@
   (:import
     [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block]))
 
-(def tpvision-repos
-  ; Retrieve a list of all paths to TP Vision's git repositories (on the local filesystem)
-  (memoize 
-    (fn []
-      (let [root-path "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/"
-            rdr (clojure.java.io/reader (str root-path "repos.txt"))]
-        (for [line (line-seq rdr)]
-          (str root-path line))))))
+(defn commit-id
+  "Get the commit ID "
+  [commit]
+  (second (clojure.string/split 
+            (.toString (:jgit-commit commit)) 
+            #" ")))
 
 (def output-dir 
   "/Users/soft/desktop/tpv-freqchanges/")
@@ -101,6 +99,12 @@
     (find-commit-by-id repo-path commit-id) 
     (fn [f] true) 1))
 
+(defn repo-name-from-path
+  "Extract the git repository name from the path to its .git directory"
+  [repo-path]
+  (let [split-path (clojure.string/split repo-path #"/")]
+    (nth split-path (- (count split-path) 2))))
+
 (defn analyse-commits
   "Look for change patterns in multiple commits
    @param repo-path     File path to the .git directory of a repository
@@ -108,14 +112,15 @@
    @param strategy      Preprocessing strategy (see strategyFactory.clj)
    @param start-idx     Start the analysis at the given index, and continue until the last commit"
   [repo-path results-path strategy start-idx]
-  (let [all-commits (repo/get-commits repo-path)
+  (let [repo-name (repo-name-from-path repo-path)
+        all-commits (repo/get-commits repo-path)
         commit-no (count all-commits)
         commits (take-last (- commit-no start-idx) all-commits)
         min-support 3
         verbosity 1]
     (map-indexed 
       (fn [idx commit]
-        (println "Processing commit" (+ start-idx idx) "/" commit-no)
+        (println "Processing commit" (+ start-idx idx) "/" commit-no "(" repo-name ")")
         (try 
           (mine-commit commit strategy min-support verbosity results-path)
           (catch Exception e
@@ -123,12 +128,6 @@
               (println "!! Failed to process commit" (+ start-idx idx) "/" commit-no)
               (.printStackTrace e)))))
       commits)))
-
-(defn- repo-name-from-path
-  "Extract the git repository name from the path to its .git directory"
-  [repo-path]
-  (let [split-path (clojure.string/split repo-path #"/")]
-    (nth split-path (- (count split-path) 2))))
 
 (defn analyse-repository
   "Look for change patterns across all commits in a repository"
@@ -281,7 +280,6 @@
                           index (if (instance? ChildListPropertyDescriptor lip)
                                   (.indexOf  ^java.util.AbstractList (.getStructuralProperty parent lip) current))]
                       (cons [lip index] path))
-                    
                     )))))
     [change []]))
 
@@ -305,65 +303,3 @@
                      )]
     [stmt-index node path]
     ))
-
-(comment
-  (def git-path (nth (tpvision-repos) 4))
-  (count (repo/get-commits git-path))
-  (repo-name-from-path git-path)
-  
-  ; Analyse an entire repository (in a separate thread)
-  (damp.ekeko.snippets.util/future-group nil 
-    (analyse-repository git-path (stratfac/make-strategy))) 
-  
-  ; Pretty-print the entire support map
-  (def supp-map (repo-support-map git-path))
-  
-  (doseq [support (sort (keys supp-map))]
-    (let [val (get supp-map support)]
-      (println support "," (:count val) "," (double (:avg-length val)) "," (:max-length val))))
-  
-  (inspector-jay.core/inspect supp-map)
-  
-  ; Open up all commits of a certain support level
-  (doseq [commit (:commits (get supp-map 15))]
-    (open-commit git-path commit))
-
-  ; Find commit with a certain message
-  (.indexOf (repo/get-commits git-path)
-    (first (repo/get-commits git-path (fn [msg] (.startsWith msg "Dapq Face recognisation change")))))
-  
-  (inspector-jay.core/inspect (repo/get-commits git-path))
-  
-  (def changes (main/get-changes-in-commit (nth (repo/get-commits git-path) 7) (fn [f] true) 2))
-  (inspector-jay.core/inspect changes)
-  
-  ; Get the changes of a specific commit
-  (def changes (get-changes-by-commit-id git-path "42bea6059847ef149c6296de315ca696f013a49e"))
-  (damp.ekeko.jdt.astnode/path-from-root (:original (nth changes 3)))
-  
-  ; Analyze a range of commits
-  (analyse-commits 
-    git-path
-    "/Users/soft/desktop/freqchanges-contd6.txt"
-    (stratfac/make-strategy)
-    200)
-  
-  (mine-commit
-    (find-commit-by-id git-path "240f127f65b6814a00c51538240ff54dd1d42ee8")
-    (stratfac/make-strategy)
-    3
-    1
-    "/Users/soft/desktop/test2.txt")
-  
-  (analyse-commits git-path "/Users/soft/desktop/tpv-freqchanges/ambihue/patterns-0.txt"
-                         (stratfac/make-strategy) 200)
-  
-  ; Nested insert
-  ;(inspector-jay.core/inspect (locate-change-in-body (nth changes 44) changes))
-  ; Nested delete
-  ;(inspector-jay.core/inspect (find-root-change (nth changes 747) changes))
-  
-  ; Create change dependency graph
-  (time (def deps (qwal/create-dependency-graph {:changes changes})))
-  (qwal/changes->graph {:changes changes})
-  )
