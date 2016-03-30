@@ -21,6 +21,8 @@
   (count (repo/get-commits git-path))
   (repo-name-from-path git-path)
   
+  (inspector-jay.core/inspect (tpvision-repos))
+  
   ; Analyse multiple repos in parallel (Can produce a garbled mess in the console, but that's ok :) )
   (pmap 
     (fn [x] 

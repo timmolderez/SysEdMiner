@@ -4,6 +4,7 @@
   arvid.thesis.plugin.clj.test.selenium
   (:require 
     [arvid.thesis.plugin.clj.git.repository :as repo]
+    [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
     [clojure.java.shell :as sh]
     [arvid.thesis.plugin.clj.test.main :as main]))
 
@@ -82,14 +83,39 @@
               new (conj old line)]
           (recur rest-lines commit (assoc commit-map commit new)))))))
 
+(defn analyse-selenium-commits [repo-path strategy]
+  "Analyse only the commits that concern Selenium-related files, and analyse only those files"
+  (let [repo-name (main/repo-name-from-path repo-path)
+        commit-map (slurp-selenium-related-commits (str output-dir repo-name "/selenium-commits.txt"))
+        commit-count (count (keys commit-map))
+        min-support 3
+        verbosity 1]
+    (map-indexed 
+      (fn [idx commit-id]
+        (println "Processing commit" idx "/" commit-count "(" repo-name ")")
+        (try 
+          (main/mine-commit 
+            (main/find-commit-by-id repo-path commit-id) 
+            strategy min-support verbosity 
+            (str output-dir repo-name "/patterns.txt")
+            (fn [file-path]
+              (let [selenium-files (get commit-map commit-id)]
+                (some (fn [sel-file] (= file-path sel-file)) selenium-files))))
+          (catch Exception e
+            (do
+              (println "!! Failed to process commit" idx)
+              (.printStackTrace e))))
+        )
+      (keys commit-map))))
+
 (comment
   (def git-path (nth selenium-repos 5))
-  (count (repo/get-commits git-path))
-  (nth (repo/get-commits git-path) 2)
-  (repo-name-from-path git-path)
+  
+  (analyse-selenium-commits (nth selenium-repos 0) (stratfac/make-strategy))
   
   (spit-selenium-related-commits "/Users/soft/Desktop/sel.txt" selenium-commits)
-  (inspector-jay.core/inspect (slurp-selenium-related-commits "/Users/soft/Desktop/sel.txt"))
+  (inspector-jay.core/inspect (slurp-selenium-related-commits (str output-dir "atlas/selenium-commits.txt")))
+  
   
   (def selenium-commits
     (find-selenium-related-commits git-path))

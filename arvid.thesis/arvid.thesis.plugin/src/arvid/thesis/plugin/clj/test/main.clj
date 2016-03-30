@@ -15,7 +15,7 @@
     [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block]))
 
 (defn commit-id
-  "Get the commit ID "
+  "Get the commit ID of a JGit object"
   [commit]
   (second (clojure.string/split 
             (.toString (:jgit-commit commit)) 
@@ -35,10 +35,11 @@
    @param strategy      Determines how to group changes, and the equality relation between two changes
    @param verbosity     Console output verbosity level [0-3]
    @param results-path  Path to results file (created if it doesn't exist)
-   @reutrn              Pair containing all distilled changes + all frequent patterns"
-  [commit strategy min-support verbosity results-path]
-  (let [file-filter (fn [filename] true)
-        changes (main/get-changes-in-commit commit file-filter verbosity)
+   @return              Pair containing all distilled changes + all frequent patterns"
+  ([commit strategy min-support verbosity results-path]
+    (mine-commit commit strategy min-support verbosity results-path (fn [filename] true)))
+  ([commit strategy min-support verbosity results-path file-filter]
+  (let [changes (main/get-changes-in-commit commit file-filter verbosity)
         patterns (main/mine-changes changes strategy min-support verbosity)]
     ; Update results file if any patterns are found
     (if (not (empty? (:patterns-list  patterns)))
@@ -83,7 +84,7 @@
               ))
           (append results-path "======")
           )))
-    [changes patterns]))
+    [changes patterns])))
 
 (defn find-commit-by-id [repo-path commit-id]
   (let [all-commits (repo/get-commits repo-path)
