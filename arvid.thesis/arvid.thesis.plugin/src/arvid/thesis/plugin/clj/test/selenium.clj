@@ -52,7 +52,9 @@
              selenium-files (filter
                               (fn [file]
                                 (let [contents (:out (sh/sh "git" "show" (str commit ":" file) :dir (str repo-path "/..")))]
-                                  (.contains contents "import org.openqa.selenium")))
+                                  (or 
+                                    (.contains contents "import org.openqa.selenium")
+                                    (.contains contents "import com.thoughtworks.selenium"))))
                               commit-files)]
          (if (empty? selenium-files)
            nil
@@ -86,9 +88,9 @@
 (defn analyse-selenium-commits [repo-path strategy]
   "Analyse only the commits that concern Selenium-related files, and analyse only those files"
   (let [repo-name (main/repo-name-from-path repo-path)
-        commit-map (slurp-selenium-related-commits (str output-dir repo-name "/selenium-commits.txt"))
+        commit-map (slurp-selenium-related-commits (str output-dir repo-name "/selenium-commits2.txt"))
         commit-count (count (keys commit-map))
-        min-support 3
+        min-support 4
         verbosity 1]
     (map-indexed 
       (fn [idx commit-id]
@@ -97,7 +99,7 @@
           (main/mine-commit 
             (main/find-commit-by-id repo-path commit-id) 
             strategy min-support verbosity 
-            (str output-dir repo-name "/patterns.txt")
+            (str output-dir repo-name "/patterns4_noctxt_typedecl.txt")
             (fn [file-path]
               (let [selenium-files (get commit-map commit-id)]
                 (some (fn [sel-file] (= file-path sel-file)) selenium-files))))
@@ -109,23 +111,35 @@
       (keys commit-map))))
 
 (comment
-  (def git-path (nth selenium-repos 5))
+  (def git-path (nth selenium-repos 0))
+  (def strategy
+    ;(stratfac/make-strategy)
+    ;(stratfac/make-strategy :MethodDeclaration #{:equals-operation-fully? :equals-subject-structurally? :equals-context-who-cares? })
+    (stratfac/make-strategy :TypeDeclaration #{:equals-operation-fully? :equals-subject-structurally? :equals-context-who-cares? })
+    )
   
-  (analyse-selenium-commits (nth selenium-repos 0) (stratfac/make-strategy))
+  
+  (doseq [repo selenium-repos]
+    (do
+      (doall (analyse-selenium-commits repo strategy))
+      nil)
+    )
+  
+  (def supp-map (main/build-support-map {} (str output-dir "atlas/patterns4_noctxt_typedecl.txt")))
   
   (spit-selenium-related-commits "/Users/soft/Desktop/sel.txt" selenium-commits)
   (inspector-jay.core/inspect (slurp-selenium-related-commits (str output-dir "atlas/selenium-commits.txt")))
   
-  
   (def selenium-commits
     (find-selenium-related-commits git-path))
   
+  ; Spit all selenium-related commits for all repos
   (doseq [repo selenium-repos]
     (let [repo-name (main/repo-name-from-path repo)
           selenium-commits (find-selenium-related-commits repo)]
       (println repo-name)
       (.mkdir (java.io.File. (str output-dir repo-name)))
-      (spit-selenium-related-commits (str output-dir repo-name "/selenium-commits.txt") selenium-commits)
+      (spit-selenium-related-commits (str output-dir repo-name "/selenium-commits2.txt") selenium-commits)
       ))
   
 )
