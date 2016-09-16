@@ -2,7 +2,10 @@
   (:require [damp.ekeko.jdt.astnode :as astnode])
   (:require [damp.ekeko.snippets.operatorsrep :as operatorsrep])
   (:require [damp.ekeko.snippets.snippetgroup :as snippetgroup])
-  (:import [java.util List]))
+  (:import [java.util List])
+  (import org.eclipse.jdt.core.JavaCore)
+  (import org.eclipse.jdt.core.dom.ASTParser)
+  (import org.eclipse.jdt.core.dom.AST))
 
 (defn 
   ekekoConsolePrintln 
@@ -67,3 +70,14 @@
          :else
            (throw (Exception. "Woops. What's happening here?" node)))))
 
+(defn
+  source-to-ast
+  "Parses a String of source code into a Java AST"
+  [source]
+  (let [parser (ASTParser/newParser AST/JLS8)
+        options (JavaCore/getOptions)]
+    (JavaCore/setComplianceOptions JavaCore/VERSION_1_5 options)
+    (.setKind parser ASTParser/K_COMPILATION_UNIT)
+    (.setSource parser (.toCharArray source))
+    (.setCompilerOptions parser options)
+    (.createAST parser nil)))

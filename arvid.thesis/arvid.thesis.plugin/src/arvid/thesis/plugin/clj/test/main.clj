@@ -9,10 +9,13 @@
     [arvid.thesis.plugin.clj.preprocess.grouping.group :as group]
     [clojure.java.shell :as sh]
     [qwalkeko.clj.functionalnodes :as qwal]
-    [damp.ekeko.jdt.astnode :as astnode]
-    )
+    [arvid.thesis.plugin.clj.util :as util]
+    [arvid.thesis.plugin.clj.changenodes.change :as change]
+    [arvid.thesis.plugin.clj.changenodes.changes :as changes]
+    [qwalkeko.clj.functionalnodes :as functionalnodes]
+    [damp.ekeko.jdt.astnode :as astnode])
   (:import
-    [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block]))
+    [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block Expression]))
 
 (defn commit-id
   "Get the commit ID of a JGit object"
@@ -21,13 +24,31 @@
             (.toString (:jgit-commit commit)) 
             #" ")))
 
-(def output-dir 
-  "/Users/soft/desktop/tpv-freqchanges/")
+;(def output-dir "/Users/soft/desktop/tpv-freqchanges/")
+
+(def output-dir "/Users/soft/desktop/calcul-ipp-study/")
 
 (defn append
   "Appends a line of text to a file"
   [filepath text]
   (spit filepath (str text "\n") :append true :create true))
+
+(defn remove-redundant-changes 
+  "Removes any changes that aren't very interesting to consider when looking for systematic changes
+   As ChangeNodes produces a change for every single AST node that is produced, we're often only interested in the root node
+   when modifying an entire tree. For example, when adding a statement return 4; , the change that inserts the 4 isn't all that interesting.
+
+  In general, all nodes that are more fine-grained than statements are removed, unless they are the root of a modification.
+  (All roots are definitely kept to include any fine-grained/below-statement-level systematic changes..)"
+  
+  [changes]
+  (let [dependencies (functionalnodes/create-dependency-graph {:changes changes})]
+    (remove 
+      (fn [change]
+        (let [original (:original change) ; Is nil for nested changes
+              copy (:copy change)] 
+          (and (nil? original) (instance? Expression copy))))
+      changes)))
 
 (defn mine-commit
   "Look for frequent change patterns in a single commit
@@ -40,6 +61,7 @@
     (mine-commit commit strategy min-support verbosity results-path (fn [filename] true)))
   ([commit strategy min-support verbosity results-path file-filter]
   (let [changes (main/get-changes-in-commit commit file-filter verbosity)
+        filtered-changes (remove-redundant-changes changes)
         patterns (main/mine-changes changes strategy min-support verbosity)]
     ; Update results file if any patterns are found
     (if (not (empty? (:patterns-list  patterns)))
@@ -304,3 +326,56 @@
                      )]
     [stmt-index node path]
     ))
+
+(comment 
+  (let [repo-path "/Users/soft/Documents/Github/calcul_fast_2015/.git/"
+        all-commits (repo/get-commits repo-path)]
+    (doall (map-indexed
+            (fn [index commit]
+              (if (.startsWith (.toString (commit-id commit)) "14d63c4")
+                (println index)))
+            all-commits))    
+
+;    (println (.indexOf all-commits "14d63c4"))
+;    (count all-commits)
+;    (for [commit all-commits]
+;      (commit-id commit))
+;    (inspector-jay.core/inspect (first all-commits))
+    )
+  
+  (count (repo/get-commits "/Users/soft/Documents/Github/calcul_fast_2015/.git/"))
+  
+  ; Open up several commits in Sublime
+  (let [repo-path "/Users/soft/Documents/Github/calcul_fast_2015/.git/"
+        start 747
+        all-commits (repo/get-commits repo-path)
+        commits (take-last (- (count all-commits) start) all-commits)
+        slice (take 10 commits)]
+    (for [commit slice]
+      (open-commit repo-path (commit-id commit))))
+  
+  (nth 117 (repo/get-commits repo-path))
+  
+  (open-commit "/Users/soft/Documents/Github/calcul_fast_2015/.git/" "1799ffbf023c49c75963422f3d6c62f62dfe3f83")
+  
+  (open-commit "/Users/soft/Documents/Github/calcul_fast_2015/.git/" "862b17092e146215203852065451a5820a15c95a")
+  (open-commit "/Users/soft/Documents/Github/calcul_2015_full/.git/" "2543c4e83648b9eb12b18203f59465388e55fe64")
+  (open-commit "/Users/soft/Documents/Github/calcul_2015_full/.git/" "ef28f2a")
+
+  (let [repo-path "/Users/soft/Documents/Github/calcul_fast_2015/.git/"]
+    (with-open [rdr (clojure.java.io/reader "/Users/soft/Desktop/commits.txt")]
+    (let [lines (line-seq rdr)]
+      (doall 
+        (for [line lines]
+         (open-commit repo-path line)
+         )))))  
+  
+  
+  ; Run the distiller
+  (let [a (util/source-to-ast (slurp "/Users/soft/Desktop/a.txt"))
+        b (util/source-to-ast (slurp "/Users/soft/Desktop/b.txt"))
+        changes (changes/get-all a b)
+        deps (functionalnodes/create-dependency-graph {:changes changes})]
+    (println (changes/to-string changes)))
+  
+  )
