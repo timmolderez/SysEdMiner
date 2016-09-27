@@ -108,6 +108,66 @@
           )))
     [changes patterns])))
 
+(defn mine-source-change
+  "Look for frequent change patterns by comparing two pieces of source code (variant of mine-commit)
+   @param before-code   source code (String) before it was changed
+   @param after-code    source code after it was changed
+   @param strategy      Determines how to group changes, and the equality relation between two changes
+   @param verbosity     Console output verbosity level [0-3]
+   @param results-path  Path to results file (created if it doesn't exist)
+   @return              Pair containing all distilled changes + all frequent patterns"
+  ([before-code after-code strategy min-support verbosity results-path]
+    (mine-source-change before-code after-code strategy min-support verbosity results-path (fn [filename] true)))
+  ([before-code after-code strategy min-support verbosity results-path file-filter]
+  (let [before-ast (util/source-to-ast before-code)
+        after-ast (util/source-to-ast after-code)
+        changes (changes/get-all before-ast after-ast)
+        filtered-changes (remove-redundant-changes changes)
+        patterns (main/mine-changes changes strategy min-support verbosity)]
+    ; Update results file if any patterns are found
+    (if (not (empty? (:patterns-list  patterns)))
+      (do 
+        (append results-path " ")
+        ; For each pattern
+        (inspector-jay.core/inspect patterns)
+        (doseq [pattern (:patterns-list patterns)]
+          (append results-path (str "Support:" (:support pattern)))
+          ; Write change types (insert, delete, ..)
+          (let [inst-changes (:changes (:group (:gengroup (first (:instances pattern)))))
+                change-types (clojure.string/join " " (for [change inst-changes] (name (:operation change))))]
+            (append results-path (str "ChangeTypes:" change-types))
+            (append results-path " "))
+          ; For each instance of the pattern
+          (doseq [instance (:instances pattern)]
+            (let [gengroup (:gengroup instance)
+                  group (:group gengroup)
+                  container (:container gengroup)]
+              (append results-path (str "ContainerMethod:"
+                                        (.getName (.getPackage (.getRoot container))) "."
+                                        (.getName (first (.types (.getRoot container)))) "."
+                                        (.getName container)))
+              (append results-path (str "ChangeIDs:" 
+                                        (clojure.string/join 
+                                          " "
+                                          (for [change (:changes group)]
+                                            (.indexOf changes change)))))
+              (doseq [change (:changes group)]
+                (append results-path (str "ChangePath-" (.indexOf changes change) ":"
+                                          (clojure.string/join 
+                                            " "
+                                            (for [element (group/get-path-of-change group change)]
+                                              (.toString element))))))
+              (append results-path (str "ChangeNodeTypes:" 
+                                        (clojure.string/join 
+                                          " "
+                                          (for [change (:changes group)]
+                                            (.getName (.getClass (:copy change)))))))
+              (append results-path "------")
+              ))
+          (append results-path "======")
+          )))
+    [changes patterns])))
+
 (defn find-commit-by-id [repo-path commit-id]
   (let [all-commits (repo/get-commits repo-path)
         commit (some
@@ -370,6 +430,22 @@
          (open-commit repo-path line)
          )))))  
   
+  ; Find patterns between two files
+  (let [a (util/source-to-ast (slurp "/Users/soft/Desktop/a.txt"))
+        b (util/source-to-ast (slurp "/Users/soft/Desktop/b.txt"))
+        changes (changes/get-all a b)
+        
+        ]
+    (println (changes/to-string changes)))
+  
+  (mine-source-change
+    (slurp "/Users/soft/Desktop/c.txt")
+    (slurp "/Users/soft/Desktop/d.txt")
+    (stratfac/make-strategy)
+    1
+    0
+    "/Users/soft/desktop/output.txt"
+    )
   
   ; Run the distiller
   (let [a (util/source-to-ast (slurp "/Users/soft/Desktop/a.txt"))
