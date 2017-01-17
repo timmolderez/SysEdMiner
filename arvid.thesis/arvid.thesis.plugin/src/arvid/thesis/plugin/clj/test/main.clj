@@ -24,9 +24,9 @@
             (.toString (:jgit-commit commit)) 
             #" ")))
 
-;(def output-dir "/Users/soft/desktop/tpv-freqchanges/")
+(def output-dir "/Users/soft/desktop/tpv-freqchanges/")
 
-(def output-dir "/Users/soft/desktop/calcul-ipp-study/")
+;(def output-dir "/Users/soft/desktop/calcul-ipp-study/")
 
 (defn append
   "Appends a line of text to a file"
@@ -109,7 +109,8 @@
     [changes patterns])))
 
 (defn mine-source-change
-  "Look for frequent change patterns by comparing two pieces of source code (variant of mine-commit)
+  "Look for frequent change patterns by comparing two pieces of source code 
+   (variant of mine-commit)
    @param before-code   source code (String) before it was changed
    @param after-code    source code after it was changed
    @param strategy      Determines how to group changes, and the equality relation between two changes
@@ -311,6 +312,19 @@
                                 #" "))]
               (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-ids changeids) support commit))
             
+            (.startsWith line "ChangePath")
+            (let [cur-paths (instance :change-paths)
+                  matcher (re-matcher #"ChangePath-(\d+):(.*)" line)
+                  _ (.matches matcher) ; Needed for .group calls (side-effect)
+                  changeid (.group matcher 1)
+                  path (.group matcher 2)
+                  ]
+              (recur (first rest-lines) (rest rest-lines) 
+                     support-map pattern 
+                     (assoc instance :change-paths
+                            (assoc cur-paths changeid path)) 
+                     support commit))
+            
             ; Disabled for quicker browsing..
 ;            (.startsWith line "ChangeNodeTypes")
 ;            (let [change-node-types (clojure.string/split
@@ -334,9 +348,8 @@
 
 (defn repo-support-map
   "Reads all result files produced by analyze-repository"
-  [repo-path]
-  (let [repo-name (repo-name-from-path repo-path)
-        pattern-folder (str output-dir repo-name "/")]
+  [repo-name]
+  (let [pattern-folder (str output-dir repo-name "/")]
     (loop [i 0
            support-map {}]
       (let [pattern-file (str pattern-folder "patterns-" i ".txt")]
@@ -388,6 +401,12 @@
     ))
 
 (comment 
+  
+  (inspector-jay.core/inspect 
+    (repo-support-map "quicksearchbar"))
+  
+  
+  
   (let [repo-path "/Users/soft/Documents/Github/calcul_fast_2015/.git/"
         all-commits (repo/get-commits repo-path)]
     (doall (map-indexed
