@@ -81,3 +81,9 @@
     (.setSource parser (.toCharArray source))
     (.setCompilerOptions parser options)
     (.createAST parser nil)))
+
+(defn time-elapsed 
+  "Returns the number of milliseconds that have passed since start-time.
+   Note that start-time must be obtained via (.System (nanoTime))"
+  [start-time]
+  (/ (double (- (. System (nanoTime)) start-time)) 1000000.0))

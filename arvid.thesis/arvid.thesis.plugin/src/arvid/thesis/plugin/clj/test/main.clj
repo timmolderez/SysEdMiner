@@ -60,9 +60,18 @@
   ([commit strategy min-support verbosity results-path]
     (mine-commit commit strategy min-support verbosity results-path (fn [filename] true)))
   ([commit strategy min-support verbosity results-path file-filter]
-  (let [changes (main/get-changes-in-commit commit file-filter verbosity)
+    (let [timing-path (str (clojure.string/join 
+                            "/" 
+                            (butlast (clojure.string/split results-path #"/"))) 
+                           "/timing.txt") 
+        start-time (. System (nanoTime))
+        changes (main/get-changes-in-commit commit file-filter verbosity)
+        _ (append timing-path (str "DIST" (util/time-elapsed start-time)))
+        start-time2 (. System (nanoTime))
+        
         filtered-changes (remove-redundant-changes changes)
-        patterns (main/mine-changes changes strategy min-support verbosity)]
+        patterns (main/mine-changes changes strategy min-support verbosity)
+        _2 (append timing-path (str "MINE" (util/time-elapsed start-time2)))]
     ; Update results file if any patterns are found
     (if (not (empty? (:patterns-list  patterns)))
       (do 

@@ -42,5 +42,6 @@
   (try
     (changes/get-all (get-before changed-file) (get-after changed-file))
     (catch Exception e
+      (println (.getMessage e))
       (println "! Running changenodes failed. Ignoring file " (get-name changed-file))
       '())))

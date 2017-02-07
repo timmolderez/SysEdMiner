@@ -16,10 +16,24 @@
         (for [line (line-seq rdr)]
           (str root-path line))))))
 
+
+(def default-strategy (stratfac/make-strategy))
+(def git-path (nth (tpvision-repos) 30))
 (comment
-  (def git-path (nth (tpvision-repos) 68))
+  
   (count (repo/get-commits git-path))
-  (repo-name-from-path git-path)
+  (main/repo-name-from-path git-path)
+  
+  (doseq [gp (tpvision-repos)]
+    (println gp)
+;    (println (count (repo/get-commits gp)))
+    )
+  
+  (def default-strategy (stratfac/make-strategy))
+  (def custom-strategy
+    (stratfac/make-strategy 
+      :TypeDeclaration
+      #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
   
   (inspector-jay.core/inspect (tpvision-repos))
   
@@ -29,11 +43,16 @@
       (damp.ekeko.snippets.util/future-group 
        nil 
        (main/analyse-repository (nth (tpvision-repos) x) (stratfac/make-strategy))))
-    (range 30 34))
+    (range 0 75))
+  
+  (map 
+    (fn [x] 
+      (main/analyse-repository (nth (tpvision-repos) x) (stratfac/make-strategy)))
+    (range 0 75))
   
   ; Analyse an entire repository (in a separate thread)
   (damp.ekeko.snippets.util/future-group nil 
-    (main/analyse-repository git-path (stratfac/make-strategy))) 
+    (main/analyse-repository git-path default-strategy)) 
   
   ; Pretty-print the entire support map
   (def supp-map (main/repo-support-map git-path))
