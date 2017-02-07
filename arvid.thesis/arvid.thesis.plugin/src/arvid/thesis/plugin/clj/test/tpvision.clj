@@ -18,6 +18,10 @@
 
 
 (def default-strategy (stratfac/make-strategy))
+(def custom-strategy
+    (stratfac/make-strategy 
+      :CompilationUnit
+      #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
 (def git-path (nth (tpvision-repos) 30))
 (comment
   
@@ -30,10 +34,7 @@
     )
   
   (def default-strategy (stratfac/make-strategy))
-  (def custom-strategy
-    (stratfac/make-strategy 
-      :TypeDeclaration
-      #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
+  
   
   (inspector-jay.core/inspect (tpvision-repos))
   
@@ -45,10 +46,12 @@
        (main/analyse-repository (nth (tpvision-repos) x) (stratfac/make-strategy))))
     (range 0 75))
   
+  ; Non-parallel
   (map 
     (fn [x] 
       (main/analyse-repository (nth (tpvision-repos) x) (stratfac/make-strategy)))
-    (range 0 75))
+    (range 0 10))
+  
   
   ; Analyse an entire repository (in a separate thread)
   (damp.ekeko.snippets.util/future-group nil 

@@ -50,30 +50,21 @@
           (and (nil? original) (instance? Expression copy))))
       changes)))
 
-(defn mine-commit
-  "Look for frequent change patterns in a single commit
-   @param commit        JGit Commit instance
-   @param strategy      Determines how to group changes, and the equality relation between two changes
-   @param verbosity     Console output verbosity level [0-3]
-   @param results-path  Path to results file (created if it doesn't exist)
-   @return              Pair containing all distilled changes + all frequent patterns"
-  ([commit strategy min-support verbosity results-path]
-    (mine-commit commit strategy min-support verbosity results-path (fn [filename] true)))
-  ([commit strategy min-support verbosity results-path file-filter]
-    (let [timing-path (str (clojure.string/join 
-                            "/" 
-                            (butlast (clojure.string/split results-path #"/"))) 
-                           "/timing.txt") 
-        start-time (. System (nanoTime))
-        changes (main/get-changes-in-commit commit file-filter verbosity)
-        _ (append timing-path (str "DIST" (util/time-elapsed start-time)))
-        start-time2 (. System (nanoTime))
-        
-        filtered-changes (remove-redundant-changes changes)
-        patterns (main/mine-changes changes strategy min-support verbosity)
-        _2 (append timing-path (str "MINE" (util/time-elapsed start-time2)))]
-    ; Update results file if any patterns are found
-    (if (not (empty? (:patterns-list  patterns)))
+(defn make-strategy [container]
+  (stratfac/make-strategy 
+    container
+    #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?})
+  )
+
+(defn add-suffix [path suffix]
+  "Add a suffix to a filename, assuming the file has an extension"
+  (let [split (clojure.string/split path #"\.")
+        fname (str (nth split (- (count split ) 2)) suffix)]
+    (clojure.string/join "."
+      (assoc split (- (count split ) 2) fname))))
+
+(defn write-results [commit changes patterns results-path]
+  (if (not (empty? (:patterns-list  patterns)))
       (do 
         (append results-path (str "CommitID:" (.toString (:jgit-commit commit))))
         (append results-path (str "CommitMsg:" (:message commit)))
@@ -114,7 +105,42 @@
               (append results-path "------")
               ))
           (append results-path "======")
-          )))
+          ))))
+
+(defn mine-commit
+  "Look for frequent change patterns in a single commit
+   @param commit        JGit Commit instance
+   @param strategy      Determines how to group changes, and the equality relation between two changes
+   @param verbosity     Console output verbosity level [0-3]
+   @param results-path  Path to results file (created if it doesn't exist)
+   @return              Pair containing all distilled changes + all frequent patterns"
+  ([commit strategy min-support verbosity results-path]
+    (mine-commit commit strategy min-support verbosity results-path (fn [filename] true)))
+  ([commit strategy min-support verbosity results-path file-filter]
+    (let [timing-path (str (clojure.string/join 
+                            "/" 
+                            (butlast (clojure.string/split results-path #"/"))) 
+                           "/timing.txt") 
+        start-time (. System (nanoTime))
+        changes (main/get-changes-in-commit commit file-filter verbosity)
+        _ (append timing-path (util/time-elapsed start-time))
+        
+        start-time2 (. System (nanoTime))
+        patterns (main/mine-changes changes strategy min-support verbosity)
+        _2 (append (add-suffix timing-path "-m") (util/time-elapsed start-time2))
+        
+        start-time3 (. System (nanoTime))
+        patterns-cu (main/mine-changes changes (make-strategy :CompilationUnit) min-support verbosity)
+        _3 (append (add-suffix timing-path "-cu") (util/time-elapsed start-time3))
+        
+        start-time4 (. System (nanoTime))
+        patterns-stmt (main/mine-changes changes (make-strategy :Statement) min-support verbosity)
+        _4 (append (add-suffix timing-path "-stmt") (util/time-elapsed start-time4))
+        ]
+    ; Update results file if any patterns are found
+    (write-results commit changes patterns results-path)
+    (write-results commit changes patterns-cu (add-suffix results-path "-cu"))
+    (write-results commit changes patterns-stmt (add-suffix results-path "-stmt"))
     [changes patterns])))
 
 (defn mine-source-change
@@ -132,7 +158,6 @@
   (let [before-ast (util/source-to-ast before-code)
         after-ast (util/source-to-ast after-code)
         changes (changes/get-all before-ast after-ast)
-        filtered-changes (remove-redundant-changes changes)
         patterns (main/mine-changes changes strategy min-support verbosity)]
     ; Update results file if any patterns are found
     (if (not (empty? (:patterns-list  patterns)))
