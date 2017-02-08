@@ -3,6 +3,7 @@
   (:require [damp.ekeko.snippets.operatorsrep :as operatorsrep])
   (:require [damp.ekeko.snippets.snippetgroup :as snippetgroup])
   (:import [java.util List])
+  (:import (java.util.concurrent TimeoutException TimeUnit FutureTask))
   (import org.eclipse.jdt.core.JavaCore)
   (import org.eclipse.jdt.core.dom.ASTParser)
   (import org.eclipse.jdt.core.dom.AST))
@@ -87,3 +88,31 @@
    Note that start-time must be obtained via (.System (nanoTime))"
   [start-time]
   (/ (double (- (. System (nanoTime)) start-time)) 1000000.0))
+
+; Source: https://github.com/flatland/clojail/blob/master/src/clojail/core.clj#L40
+(defn thunk-timeout
+  "Takes a function and an amount of time to wait for thse function to finish
+   executing."
+  ([thunk ms]
+     (thunk-timeout thunk ms nil))
+  ([thunk time tg]
+     (let [task (FutureTask. thunk)
+           thr (if tg (Thread. tg task) (Thread. task))]
+       (try
+         (.start thr)
+         (.get task time TimeUnit/MILLISECONDS)
+         (catch TimeoutException e
+           (.cancel task true)
+           (.stop thr) 
+           (throw (TimeoutException. "Execution timed out.")))
+         (catch Exception e
+           (.cancel task true)
+           (.stop thr) 
+           (throw e))))))
+
+(defmacro with-timeout
+  "Apply this macro to an expression and an exception is thrown if it takes longer than a given time to evaluate the expression"
+  ([time body]
+  `(thunk-timeout (fn [] ~body) ~time))
+  ([time body tg]
+  `(thunk-timeout (fn [] ~body) ~time ~tg)))

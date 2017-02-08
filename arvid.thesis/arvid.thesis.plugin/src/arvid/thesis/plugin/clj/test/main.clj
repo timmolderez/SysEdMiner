@@ -25,6 +25,7 @@
             #" ")))
 
 (def output-dir "/Users/soft/desktop/tpv-freqchanges/")
+(def COMMIT-TIMEOUT 300000)
 
 ;(def output-dir "/Users/soft/desktop/calcul-ipp-study/")
 
@@ -240,7 +241,9 @@
       (fn [idx commit]
         (println "Processing commit" (+ start-idx idx) "/" commit-no "(" repo-name ")")
         (try 
-          (mine-commit commit strategy min-support verbosity results-path)
+          (util/with-timeout 
+            COMMIT-TIMEOUT
+            (mine-commit commit strategy min-support verbosity results-path))
           (catch Exception e
             (do
               (println "!! Failed to process commit" (+ start-idx idx) "/" commit-no)
