@@ -116,6 +116,15 @@
         path2 (group/get-path-of-change group2 change2)]
     (= path1 path2)))
 
+(defn 
+  equals-context-path-no-indices?
+  "Considers two nodes equal if their exact path within the group is equal, ignoring the paths indices."
+  [group1 change1 group2 change2]
+  (let [path1 (group/get-path-of-change group1 change1)
+        path2 (group/get-path-of-change group2 change2)]
+    (= (remove integer? path1) 
+       (remove integer? path2))))
+
 ; TODO
 ;(defn
 ;  equals-context-path-relative?
@@ -257,7 +266,7 @@
 (defn
   make-strategy 
   ([]
-   (make-strategy :MethodDeclaration #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
+   (make-strategy :MethodDeclaration #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-no-indices?}))
   ([equalities]
    (make-strategy :MethodDeclaration equalities))
   ([group-container-type equalities]

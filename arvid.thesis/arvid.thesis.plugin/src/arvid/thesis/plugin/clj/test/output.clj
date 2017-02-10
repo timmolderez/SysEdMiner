@@ -66,7 +66,8 @@
             (if (or (not (contains? cps (first changepaths))) (empty? (first changepaths)) (= ":body" (first changepaths)))
               (recur (rest changepaths) stmtno-to-changes)
               (let [changepath (first changepaths)
-                  stmtno (Integer/parseInt (statement-index-from-changepath  changepath))
+                  stmtno (try (Integer/parseInt (statement-index-from-changepath  changepath))
+                           (catch Exception e -1))
                   cur-paths (get stmtno-to-changes stmtno)]
               (recur 
                 (rest changepaths)
@@ -75,7 +76,9 @@
           )]
     (util/append output-file method)
     (doseq [stmt-no (sort (keys stmtno-to-changes))]
-      (let [stmt (.get (.statements (.getBody method-node)) stmt-no)
+      (let [stmt (try 
+                   (.get (.statements (.getBody method-node)) stmt-no)
+                   (catch Exception e "ERROR in retrieving stmt.."))
             changepaths (get stmtno-to-changes stmt-no)]
         (util/append output-file (str "---------------------"))
         (doseq [changepath changepaths]
@@ -121,7 +124,6 @@
           (try 
             (show-systematic-instance repo-path commit instance output-dir inter)
             (catch Exception e (println "!!!" (.getMessage e))))
-          
           ))
       )))
 
