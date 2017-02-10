@@ -121,13 +121,14 @@
     (let [timing-path (str (clojure.string/join 
                             "/" 
                             (butlast (clojure.string/split results-path #"/"))) 
-                           "/timing.txt") 
+                           "/timing.txt")
         start-time (. System (nanoTime))
         changes (main/get-changes-in-commit commit file-filter verbosity)
         _ (append timing-path (util/time-elapsed start-time))
         
         start-time2 (. System (nanoTime))
         patterns (main/mine-changes changes strategy min-support verbosity)
+        tmp (inspector-jay.core/inspect patterns)
         _2 (append (add-suffix timing-path "-m") (util/time-elapsed start-time2))
         
         start-time3 (. System (nanoTime))
@@ -437,7 +438,13 @@
     [stmt-index node path]
     ))
 
-(comment 
+(comment
+  
+  (let [repo-path "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git"
+        repo-name (repo-name-from-path repo-path)
+        commit (find-commit-by-id repo-path "db2ee203daf15c881db6f285e217eb8ff8a19e6c")]
+    (mine-commit commit (stratfac/make-strategy) 3 1 "/Users/soft/desktop/tpv-freqchanges/tmp/tmp.txt")
+    )
   
   (inspector-jay.core/inspect 
     (repo-support-map "quicksearchbar"))

@@ -5,7 +5,8 @@
   (:require 
     [arvid.thesis.plugin.clj.git.repository :as repo]
     [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
-    [arvid.thesis.plugin.clj.test.main :as main]))
+    [arvid.thesis.plugin.clj.test.main :as main]
+    [arvid.thesis.plugin.clj.test.output :as output]))
 
 (def tpvision-repos
   ; Retrieve a list of all paths to TP Vision's git repositories (on the local filesystem)
@@ -24,6 +25,17 @@
       #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
 (def git-path (nth (tpvision-repos) 30))
 (comment
+  
+  (for [repo-path (tpvision-repos)]
+    (let [repo-name (main/repo-name-from-path repo-path)]
+      (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name)))
+        (let []
+          (try 
+            (output/generate-sample-systematic-edits repo-path 1)
+            (catch Exception e (println "!")))))))
+ 
+  
+  
   
   (count (repo/get-commits git-path))
   (main/repo-name-from-path git-path)
@@ -58,7 +70,7 @@
     (main/analyse-repository git-path default-strategy)) 
   
   ; Pretty-print the entire support map
-  (def supp-map (main/repo-support-map git-path))
+  (def supp-map (main/repo-support-map (main/repo-name-from-path git-path)))
   
   (doseq [support (sort (keys supp-map))]
     (let [val (get supp-map support)]

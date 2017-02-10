@@ -2,6 +2,7 @@
   (:require [damp.ekeko.jdt.astnode :as astnode])
   (:require [damp.ekeko.snippets.operatorsrep :as operatorsrep])
   (:require [damp.ekeko.snippets.snippetgroup :as snippetgroup])
+  (:require [clojure.java.shell :as sh])
   (:import [java.util List])
   (:import (java.util.concurrent TimeoutException TimeUnit FutureTask))
   (import org.eclipse.jdt.core.JavaCore)
@@ -116,3 +117,25 @@
   `(thunk-timeout (fn [] ~body) ~time))
   ([time body tg]
   `(thunk-timeout (fn [] ~body) ~time ~tg)))
+
+(defn open-in-sublime [relative-path directory]
+  (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" relative-path :dir directory))
+
+(defn get-file-in-commit 
+  "Get the version of a file at a certain commit"
+  [repo-path file-path commit]
+  (:out
+    (sh/sh "git" "show" (str commit ":" file-path) :dir repo-path)))
+
+(defn get-file-diff 
+  "Get the version of a file at a certain commit"
+  [repo-path file-path commit]
+  (:out
+    (sh/sh "git" "diff" "-U10" (str commit "^") commit "--" file-path  :dir repo-path)))
+
+;(println (get-file-diff "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/common/app/quicksearchbar" "src/org/droidtv/quicksearchbox/activities/TPVisionSearchActivity.java" "1a3ef09582f78ba0dcd21a91e23e366926fac0f4"))
+
+(defn append
+  "Appends a line of text to a file"
+  [filepath text]
+  (spit filepath (str text "\n") :append true :create true))

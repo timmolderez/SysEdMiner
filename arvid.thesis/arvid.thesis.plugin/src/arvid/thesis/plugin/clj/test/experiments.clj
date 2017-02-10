@@ -5,6 +5,7 @@
   (:require 
     [arvid.thesis.plugin.clj.git.repository :as repo]
     [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
+    [arvid.thesis.plugin.clj.test.tpvision :as experiments]
     [clojure.java.shell :as sh]
     [arvid.thesis.plugin.clj.test.main :as main]))
 
