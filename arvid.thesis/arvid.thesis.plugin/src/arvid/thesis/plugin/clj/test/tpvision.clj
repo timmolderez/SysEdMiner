@@ -24,6 +24,14 @@
       :CompilationUnit
       #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
 (def git-path (nth (tpvision-repos) 30))
+
+(defn average
+  [numbers]
+  (if (= (count numbers) 0)
+    0
+    (/ (apply + numbers) (count numbers)))
+)
+
 (comment
   
   (for [repo-path (tpvision-repos)]
@@ -33,6 +41,19 @@
           (try 
             (output/generate-sample-systematic-edits repo-path 1)
             (catch Exception e (println "!")))))))
+  
+  ; Count commits for all projects
+  (for [repo-path (tpvision-repos)]
+    (let [repo-name (main/repo-name-from-path repo-path)]
+      (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name)))
+        (let [] 
+          (println repo-name)
+          (println (count (repo/get-commits repo-path)))))))
+  
+  (int (count (remove nil? (for [repo-path (tpvision-repos)]
+                          (let [repo-name (main/repo-name-from-path repo-path)]
+                            (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name)))
+                              (count (repo/get-commits repo-path))))))))
  
   
   
@@ -72,9 +93,123 @@
   ; Pretty-print the entire support map
   (def supp-map (main/repo-support-map (main/repo-name-from-path git-path)))
   
+  (/ (with-open [rdr (clojure.java.io/reader "/Users/soft/Desktop/timing-m.txt")]
+           (reduce (fn [cur y] (+ cur (java.lang.Double/parseDouble y))) 0 (line-seq rdr))) 1000)
+  
+  ;!!!!!!!!!!!!!!!!!
+  (inspector-jay.core/inspect supp-map)
+  
+  (let [massive-maps
+        (for [repo-path (tpvision-repos)]
+        (let [repo-name (main/repo-name-from-path repo-path)]
+          (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name )))
+        
+        
+            (let [supmap (main/repo-support-map repo-name)
+             
+                  output
+                  (for [support (sort (keys supmap))]
+                    (let [val (get supmap support)
+                          lengths (for [pattern (get val :patterns)]
+                                                     (count (output/changepath-intersection pattern)))
+                          ]
+                      [(:count val) lengths]
+                  
+                      ))
+                  output-map (zipmap (sort (keys supmap)) output)
+                  ]
+              ;(println output-map)
+              output-map
+              ))))
+        
+        reduced-maps (reduce (fn [map1 map2]
+                               (reduce (fn [current support]
+                                         (let [v1 (get current support)
+                                               v1_ (if (nil? v1) [0 []] v1)
+                                               v2 (get map2 support)
+                                               ;tmp (println v1_)
+                                               new-count (concat (second v1) (second v2))
+                                               
+                                               ]
+                                           (assoc current support [0 new-count]))
+                                         
+                                         ) map1 (keys map2))
+                               
+                               ) massive-maps)]
+    (doseq [support (sort (keys reduced-maps))]
+      (println support "--" 
+               (clojure.string/join "," (second (get reduced-maps support)))               ))
+    )
+  
+  
+  (let [massive-maps
+        (for [repo-path (tpvision-repos)]
+        (let [repo-name (main/repo-name-from-path repo-path)]
+          (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name )))
+        
+        
+            (let [supmap (main/repo-support-map repo-name)
+             
+                  output
+                  (for [support (sort (keys supmap))]
+                    (let [val (get supmap support)
+                          avg (double (average (for [pattern (get val :patterns)]
+                                                 (count (output/changepath-intersection pattern)))))
+                          max (apply max (cons 0 (for [pattern (get val :patterns)]
+                                                  (count (output/changepath-intersection pattern)))))
+                          ]
+                      [(:count val) avg max]
+                  
+                      ))
+                  output-map (zipmap (sort (keys supmap)) output)
+                  ]
+              ;(println output-map)
+              output-map
+              ))))
+        
+        reduced-maps (reduce (fn [map1 map2]
+                               (reduce (fn [current support]
+                                         (let [v1 (get current support)
+                                               v1_ (if (nil? v1) [0 0 0] v1)
+                                               v2 (get map2 support)
+                                               ;tmp (println v1_)
+                                               new-count (+ (first v1_) (first v2))
+                                               new-avg (+ 
+                                                         (* (/ (first v1_) new-count) (second v1_))
+                                                         (* (/ (first v2) new-count) (second v2)))
+                                               
+                                               bad-avg (average [(second v1_) (second v2)])
+                                               new-max (max (nth v1_ 2) (nth v2 2))
+                                               ]
+                                           (assoc current support [new-count new-avg new-max]))
+                                         
+                                         ) map1 (keys map2))
+                               
+                               ) massive-maps)]
+    (doseq [support (sort (keys reduced-maps))]
+      (println support "," 
+               (first (get reduced-maps support)) ","
+               (second (get reduced-maps support)) ","
+               (nth (get reduced-maps support) 2)))
+    )
+  
+  
+  
+  
+  
   (doseq [support (sort (keys supp-map))]
-    (let [val (get supp-map support)]
-      (println support "," (:count val) "," (double (:avg-length val)) "," (:max-length val))))
+    (let [val (get supp-map support)
+;          tmp (println (keys val))
+          avg (double (average (for [pattern (get val :patterns)]
+                                           (let []
+;                                        (println (count (output/changepath-intersection pattern)))
+                                        (count (output/changepath-intersection pattern))))))
+          max (apply max (for [pattern (get val :patterns)]
+                                      (let []
+;                                        (println (count (output/changepath-intersection pattern)))
+                                        (count (output/changepath-intersection pattern)))))
+          ]
+      (println support "," (:count val) "," avg "," max)))
   
   (inspector-jay.core/inspect supp-map)
   

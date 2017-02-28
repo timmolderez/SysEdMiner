@@ -15,7 +15,10 @@
     [qwalkeko.clj.functionalnodes :as functionalnodes]
     [damp.ekeko.jdt.astnode :as astnode])
   (:import
-    [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration Block Expression]))
+    [org.eclipse.jdt.core.dom ASTNode ChildListPropertyDescriptor MethodDeclaration CompilationUnit Statement Block Expression]))
+
+(def output-dir "/Users/soft/desktop/tpv-freqchanges/")
+(def COMMIT-TIMEOUT 300000) ; Timeout value (in ms) for mining a single commit
 
 (defn commit-id
   "Get the commit ID of a JGit object"
@@ -24,16 +27,12 @@
             (.toString (:jgit-commit commit)) 
             #" ")))
 
-(def output-dir "/Users/soft/desktop/tpv-freqchanges/")
-(def COMMIT-TIMEOUT 300000)
-
-;(def output-dir "/Users/soft/desktop/calcul-ipp-study/")
-
 (defn append
   "Appends a line of text to a file"
   [filepath text]
   (spit filepath (str text "\n") :append true :create true))
 
+; UNUSED
 (defn remove-redundant-changes 
   "Removes any changes that aren't very interesting to consider when looking for systematic changes
    As ChangeNodes produces a change for every single AST node that is produced, we're often only interested in the root node
@@ -51,12 +50,6 @@
           (and (nil? original) (instance? Expression copy))))
       changes)))
 
-(defn make-strategy [container]
-  (stratfac/make-strategy 
-    container
-    #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?})
-  )
-
 (defn add-suffix [path suffix]
   "Add a suffix to a filename, assuming the file has an extension"
   (let [split (clojure.string/split path #"\.")
@@ -64,49 +57,76 @@
     (clojure.string/join "."
       (assoc split (- (count split ) 2) fname))))
 
+(defn container-string [container] ; TODO Also produce a path for removing any ambiguity!!
+  (cond
+    (instance? MethodDeclaration container)
+    (.getName container)
+    
+    (instance? CompilationUnit container)
+    (.getName (first (.types (.getRoot container))))
+    
+    (instance? Statement container)
+    (.toString (type container))
+    
+    :else nil
+    )
+  )
+
+(defn changepath-intersection [pattern]
+  (loop [instances (:instances pattern)
+         intersection (into #{} (vals (:change-paths (first instances))))]
+    (if (empty? instances)
+      intersection
+      (let [instance (first instances)
+            changepaths (into #{} (vals (:change-paths instance)))]
+        (recur (rest instances) (clojure.set/intersection intersection changepaths))))))
+
 (defn write-results [commit changes patterns results-path]
-  (if (not (empty? (:patterns-list  patterns)))
-      (do 
-        (append results-path (str "CommitID:" (.toString (:jgit-commit commit))))
-        (append results-path (str "CommitMsg:" (:message commit)))
-        (append results-path " ")
-        ; For each pattern
-        (doseq [pattern (:patterns-list patterns)]
+  (if (not (empty? (:patterns-list patterns)))
+    (do 
+      (append results-path (str "CommitID:" (.toString (:jgit-commit commit))))
+      (append results-path (str "CommitMsg:" (:message commit)))
+      (append results-path " ")
+      ; For each pattern
+      (doseq [pattern (:patterns-list patterns)]
+        (let [genchangeids (:genchange-ids pattern)
+              agengroup (:gengroup (first (:instances pattern)))
+              genchanges ; Retrieve the generalized changes of the pattern 
+              (map (fn [id]
+                     (some 
+                       (fn [change] (if (= id (:genchange-id change)) change))
+                       (:genchanges agengroup)))
+                   genchangeids)
+              change-types (clojure.string/join " " (for [change genchanges] (name (:operation (:change change)))))
+              subject-types (clojure.string/join " " (for [change genchanges] (.getName (.getClass (:copy (:change change))))))
+              ]
           (append results-path (str "Support:" (:support pattern)))
-          ; Write change types (insert, delete, ..)
-          (let [inst-changes (:changes (:group (:gengroup (first (:instances pattern)))))
-                change-types (clojure.string/join " " (for [change inst-changes] (name (:operation change))))]
-            (append results-path (str "ChangeTypes:" change-types))
-            (append results-path " "))
-          ; For each instance of the pattern
-          (doseq [instance (:instances pattern)]
-            (let [gengroup (:gengroup instance)
-                  group (:group gengroup)
-                  container (:container gengroup)]
-              (append results-path (str "ContainerMethod:"
-                                        (.getName (.getPackage (.getRoot container))) "."
-                                        (.getName (first (.types (.getRoot container)))) "."
-                                        (.getName container)))
-              (append results-path (str "ChangeIDs:" 
-                                        (clojure.string/join 
-                                          " "
-                                          (for [change (:changes group)]
-                                            (.indexOf changes change)))))
-              (doseq [change (:changes group)]
-                (append results-path (str "ChangePath-" (.indexOf changes change) ":"
-                                          (clojure.string/join 
-                                            " "
-                                            (for [element (group/get-path-of-change group change)]
-                                              (.toString element))))))
-              (append results-path (str "ChangeNodeTypes:" 
-                                        (clojure.string/join 
-                                          " "
-                                          (for [change (:changes group)]
-                                            (.getName (.getClass (:copy change)))))))
-              (append results-path "------")
-              ))
-          (append results-path "======")
-          ))))
+          (append results-path (str "GenChangeIDs:" (clojure.string/join " " genchangeids)) )
+          (append results-path (str "ChangeTypes:" change-types))
+          (append results-path (str "ChangeNodeTypes:" subject-types))
+          (append results-path " ")
+          
+          (doseq [change genchanges]
+            (append results-path (str "ChangePath-" (:genchange-id change) ":"
+                                      (clojure.string/join 
+                                        " "
+                                        (for [element (group/get-path-of-change (:group agengroup) (:change change))]
+                                          (.toString element)))))))
+        
+        ; For each instance of the pattern
+        (doseq [instance (:instances pattern)]
+          (let [gengroup (:gengroup instance)
+                container (:container gengroup)]
+            (append results-path (str "Container-description:" (container-string container)))
+            (append results-path (str "Container-package:" (.getName (.getPackage (.getRoot container)))))
+            (append results-path (str "Container-type:" (.getName (first (.types (.getRoot container))))))
+            (append results-path (str "Container-path:"
+                                      (clojure.string/join 
+                                        " "
+                                        (for [element (util/get-path-between-nodes container (.getRoot container))]
+                                          (.toString element)))))
+            (append results-path "------")))
+        (append results-path "======")))))
 
 (defn mine-commit
   "Look for frequent change patterns in a single commit
@@ -128,21 +148,21 @@
         
         start-time2 (. System (nanoTime))
         patterns (main/mine-changes changes strategy min-support verbosity)
-        tmp (inspector-jay.core/inspect patterns)
         _2 (append (add-suffix timing-path "-m") (util/time-elapsed start-time2))
         
-        start-time3 (. System (nanoTime))
-        patterns-cu (main/mine-changes changes (make-strategy :CompilationUnit) min-support verbosity)
-        _3 (append (add-suffix timing-path "-cu") (util/time-elapsed start-time3))
-        
-        start-time4 (. System (nanoTime))
-        patterns-stmt (main/mine-changes changes (make-strategy :Statement) min-support verbosity)
-        _4 (append (add-suffix timing-path "-stmt") (util/time-elapsed start-time4))
+;        start-time3 (. System (nanoTime))
+;        patterns-cu (main/mine-changes changes (make-strategy :CompilationUnit) min-support verbosity)
+;        _3 (append (add-suffix timing-path "-cu") (util/time-elapsed start-time3))
+;        
+;        start-time4 (. System (nanoTime))
+;        patterns-stmt (main/mine-changes changes (make-strategy :Statement) min-support verbosity)
+;        _4 (append (add-suffix timing-path "-stmt") (util/time-elapsed start-time4))
         ]
     ; Update results file if any patterns are found
     (write-results commit changes patterns results-path)
-    (write-results commit changes patterns-cu (add-suffix results-path "-cu"))
-    (write-results commit changes patterns-stmt (add-suffix results-path "-stmt"))
+;    (inspector-jay.core/inspect patterns)
+;    (write-results commit changes patterns-cu (add-suffix results-path "-cu"))
+;    (write-results commit changes patterns-stmt (add-suffix results-path "-stmt"))
     [changes patterns])))
 
 (defn mine-source-change
@@ -166,7 +186,6 @@
       (do 
         (append results-path " ")
         ; For each pattern
-        (inspector-jay.core/inspect patterns)
         (doseq [pattern (:patterns-list patterns)]
           (append results-path (str "Support:" (:support pattern)))
           ; Write change types (insert, delete, ..)
@@ -287,13 +306,11 @@
     (spit file-path file-contents)
     (sh/sh "open" "-a" "/Applications/Sublime Text 2.app" (str short-name ".java") :dir (str output-dir "files/"))))
 
-;(open-class-in-commit git-path "bfead7403d778a662a1fd4dda85067cafce00a01" "org.droidtv.epg.bcepg.epgui.NowNextOverview")
-
 (defn build-support-map [init-support-map results-path]
-  "Produce a support map, which maps each support level to
-   various information regarding all frequent patterns that have this support level.
+  "Parses the output file produced by mine-commit into a data structure, 
+   containing all frequent patterns grouped by support. (We call it a support map.)
    @param init-support-map  The produced support map is merged with this one.
-   @param results-path      Path to a file produced by analyse-commits"
+   @param results-path      Path to a file produced by mine-commit"
   (with-open [rdr (clojure.java.io/reader results-path)]
     (let [lines (line-seq rdr)]
       (loop [line (first lines) 
@@ -303,7 +320,7 @@
              instance {}
              support 0
              commit nil]
-        (if (empty? rest-lines)
+        (if (nil? line)
           support-map
           (cond
             ; Update the current commit ID
@@ -338,37 +355,46 @@
                                  #" ")]
               (recur (first rest-lines) (rest rest-lines) support-map (assoc pattern :change-types change-types) instance support commit))
             
-            (.startsWith line "ContainerMethod")
-            (let [container-method (second (clojure.string/split line #":"))]
-              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-method container-method) support commit))
+            (.startsWith line "Container-package")
+            (let [container (second (clojure.string/split line #":"))]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-package container) support commit))
             
-            (.startsWith line "ChangeIDs")
-            (let [changeids (map
-                              (fn [str] (java.lang.Integer/parseInt str))
-                              (clojure.string/split
-                                (second (clojure.string/split line #":")) 
-                                #" "))]
-              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-ids changeids) support commit))
+            (.startsWith line "Container-type")
+            (let [container (second (clojure.string/split line #":"))]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-type container) support commit))
+            
+            (.startsWith line "Container-path")
+            (let [matcher (re-matcher #"Container-path:(.*)" line)
+                  _ (.matches matcher)
+                  path (.group matcher 1)]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-path path) support commit))
+            
+;            (.startsWith line "ChangeIDs")
+;            (let [changeids (map
+;                              (fn [str] (java.lang.Integer/parseInt str))
+;                              (clojure.string/split
+;                                (second (clojure.string/split line #":")) 
+;                                #" "))]
+;              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-ids changeids) support commit))
             
             (.startsWith line "ChangePath")
-            (let [cur-paths (instance :change-paths)
+            (let [cur-paths (pattern :change-paths)
                   matcher (re-matcher #"ChangePath-(\d+):(.*)" line)
                   _ (.matches matcher) ; Needed for .group calls (side-effect)
                   changeid (.group matcher 1)
                   path (.group matcher 2)
                   ]
               (recur (first rest-lines) (rest rest-lines) 
-                     support-map pattern 
-                     (assoc instance :change-paths
-                            (assoc cur-paths changeid path)) 
+                     support-map
+                     (assoc pattern :change-paths (assoc cur-paths changeid path))
+                     instance 
                      support commit))
             
-            ; Disabled for quicker browsing..
-;            (.startsWith line "ChangeNodeTypes")
-;            (let [change-node-types (clojure.string/split
-;                                      (second (clojure.string/split line #":")) 
-;                                      #" ")]
-;              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :change-node-types change-node-types) support commit))
+            (.startsWith line "ChangeNodeTypes")
+            (let [change-node-types (clojure.string/split
+                                      (second (clojure.string/split line #":")) 
+                                      #" ")]
+              (recur (first rest-lines) (rest rest-lines) support-map (assoc pattern :change-node-types change-node-types) instance support commit))
             
             ; End of a pattern instance; flush the current instance to the current pattern
             (.startsWith line "------")
@@ -376,7 +402,8 @@
             
             ; End of a pattern; flush the current pattern to the support map
             (.startsWith line "======")
-            (let [cur-patterns (:patterns (get support-map support))
+            (let [tmp (println "!!!")
+                  cur-patterns (:patterns (get support-map support))
                   new-patterns (conj cur-patterns (assoc pattern :commit commit))
                   new-pattern-map (assoc (get support-map support) :patterns new-patterns)]
               (recur (first rest-lines) (rest rest-lines) (assoc support-map support new-pattern-map) {} {} 0 commit))
@@ -417,6 +444,7 @@
                     )))))
     [change []]))
 
+; UNUSED
 (defn locate-change-in-body [change changes]
   (let [node (if (= (:operation change) :insert)
                (let [[root-change path] (find-root-change change changes)
@@ -435,19 +463,21 @@
                                index)
                              (recur (astnode/owner cur))))))
                      )]
-    [stmt-index node path]
-    ))
+    [stmt-index node path]))
 
 (comment
   
+  ; Mine a commit (that we know contains a sys. edit)
   (let [repo-path "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git"
         repo-name (repo-name-from-path repo-path)
         commit (find-commit-by-id repo-path "db2ee203daf15c881db6f285e217eb8ff8a19e6c")]
     (mine-commit commit (stratfac/make-strategy) 3 1 "/Users/soft/desktop/tpv-freqchanges/tmp/tmp.txt")
     )
   
-  (inspector-jay.core/inspect 
-    (repo-support-map "quicksearchbar"))
+  ; Parse the output file of mine-commit
+  (inspector-jay.core/inspect (build-support-map {} "/Users/soft/desktop/tpv-freqchanges/tmp/tmp.txt"))
+  
+  (inspector-jay.core/inspect  (repo-support-map "quicksearchbar"))
   
   
   
@@ -484,6 +514,8 @@
   (open-commit "/Users/soft/Documents/Github/calcul_fast_2015/.git/" "862b17092e146215203852065451a5820a15c95a")
   (open-commit "/Users/soft/Documents/Github/calcul_2015_full/.git/" "2543c4e83648b9eb12b18203f59465388e55fe64")
   (open-commit "/Users/soft/Documents/Github/calcul_2015_full/.git/" "ef28f2a")
+
+  (open-class-in-commit git-path "bfead7403d778a662a1fd4dda85067cafce00a01" "org.droidtv.epg.bcepg.epgui.NowNextOverview")
 
   (let [repo-path "/Users/soft/Documents/Github/calcul_fast_2015/.git/"]
     (with-open [rdr (clojure.java.io/reader "/Users/soft/Desktop/commits.txt")]

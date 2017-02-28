@@ -47,15 +47,17 @@
         method-name (last method-split)
         cls-path (clojure.string/join #"/" (butlast method-split))
         
-        source (util/get-file-in-commit (str repo-path "/..") (str "src/" cls-path ".java") commit)
+        source (util/get-file-in-commit (str repo-path "/..") (str "src/" cls-path ".java") commit) ; Code after commit
+        prev-source (util/get-file-in-commit (str repo-path "/..") (str "src/" cls-path ".java") (str commit "^")) ; Code before commit
         
         diff (util/get-file-diff (str repo-path "/..") (str "src/" cls-path ".java") commit)
         
-;        prev-source (util/get-file-in-commit (str repo-path "/..") (str "src/" cls-path ".java") (str commit "^"))
-        file-path (str repo-path "/../src/" cls-path ".java")
         ast (util/source-to-ast source)
-;        prev-ast (util/source-to-ast prev-source)
+        prev-ast (util/source-to-ast prev-source)
+        
         method-node (find-method-named ast method-name)
+        prev-method-node (find-method-named prev-ast method-name)
+        
         output-file (str output-dir "/sysedit-" (.getName method-node)  ".txt")
         
         stmtno-to-changes
@@ -87,12 +89,7 @@
         (util/append output-file (.toString stmt))
         (util/append output-file "")
         (util/append output-file "")
-        (util/append output-file diff)))
-    
-;    (doseq [changepath (vals (:change-paths instance))]
-;      (show-systematic-changepath repo-path method changepath output-dir))
-    )
-  )
+        (util/append output-file diff)))))
 
 (defn changepath-intersection [pattern]
   (loop [instances (:instances pattern)

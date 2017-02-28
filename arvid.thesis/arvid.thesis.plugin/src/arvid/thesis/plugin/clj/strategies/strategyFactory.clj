@@ -263,6 +263,8 @@
 ; Public API
 ;;;;;;;;;;;;
 
+(def default-equalities #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-no-indices?})
+
 (defn
   make-strategy 
   ([]
