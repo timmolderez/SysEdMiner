@@ -52,6 +52,59 @@
                             current-path)]
             (recur next-path parent-of-current)))))
 
+(defn parse-node-path 
+  "Parses a node path (in String form) to a list of [property index] pairs
+   For example, :types 0 :bodyDeclarations 71 becomes [[:types 0] [:bodyDeclarations 1]]
+   If a property isn't a list-property, its index is nil."
+  [path]
+  (loop [p path
+         parsed []]
+    (let [colon-idx (clojure.string/index-of (subs p 1) ":")
+          last-match (nil? colon-idx)
+          element (if last-match
+                    p
+                    (subs p 0 colon-idx))
+          
+          element-split (clojure.string/split element #" ")
+          idx (if (not (nil? (second element-split))) (Integer/parseInt (second element-split)))
+          [property idx] [(keyword (subs (first element-split) 1)) idx]
+          new-p (conj parsed [property idx])]
+      (if last-match 
+        new-p (recur (subs p (inc colon-idx)) new-p)))))
+
+; TODO
+;(defn node-property-value [node property-name]
+;  (let [all-props (astnode/node-property-descriptors node)
+;        prop (some (fn [prop])
+;                   all-props)]
+;    
+;    
+;    (first (filter (fn [d] (= k (ekeko-keyword-for-property-descriptor d))) 
+;                   (node-property-descriptors n)))
+;    
+;    )
+;  
+;
+;  )
+
+(defn follow-node-path
+  "Follow a path produced by get-path-between-nodes, starting from 'node'."
+  [node path]
+;  (println path)
+  (let [[property idx] (first path)
+        child-tmp (node-property-value node property) ;(astnode/node-propertykeyword-value|reified node property)
+        _ (inspector-jay.core/inspect node)
+        _ (println (.getProperty node "types"))
+        child (if (nil? idx)
+                child-tmp
+                (.get child-tmp idx)
+;                (let [raw-lst (astnode/value-unwrapped child-tmp)]
+;                  (.get raw-lst idx))
+                )]
+    (if (empty? (rest path))
+      child
+      (recur child (rest path)))))
+
 (defn
   tree-dft
   ([node node-processor]
@@ -127,6 +180,13 @@
   (:out
     (sh/sh "git" "show" (str commit ":" file-path) :dir repo-path)))
 
+(defn search-all-commits 
+  "Search the entire project history for a certain string that is inserted/deleted
+   Returns a list of commits where the string was found"
+  [repo-path string]
+  (:out 
+    (sh/sh "bash" "-c" (str "git log -S\"" string "\" | grep ^commit*") :dir repo-path)))
+
 (defn get-file-diff 
   "Get the version of a file at a certain commit"
   [repo-path file-path commit]
@@ -139,3 +199,19 @@
   "Appends a line of text to a file"
   [filepath text]
   (spit filepath (str text "\n") :append true :create true))
+
+(defn average
+  [numbers]
+  (if (= (count numbers) 0)
+    0
+    (/ (apply + numbers) (count numbers))))
+
+(defn delete-recursively 
+  "Delete a folder recursively"
+  [fname]
+  (let [func (fn [func f]
+               (when (.isDirectory f)
+                 (doseq [f2 (.listFiles f)]
+                   (func func f2)))
+               (clojure.java.io/delete-file f))]
+    (func func (clojure.java.io/file fname))))

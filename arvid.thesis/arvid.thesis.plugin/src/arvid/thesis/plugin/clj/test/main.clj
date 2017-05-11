@@ -259,7 +259,7 @@
         verbosity 1]
     (map-indexed 
       (fn [idx commit]
-        (println "Processing commit" (+ start-idx idx) "/" commit-no "(" repo-name ")")
+        (println "Processing commit" (inc (+ start-idx idx)) "/" commit-no "(" repo-name ")")
         (try 
           (util/with-timeout 
             COMMIT-TIMEOUT
@@ -402,8 +402,7 @@
             
             ; End of a pattern; flush the current pattern to the support map
             (.startsWith line "======")
-            (let [tmp (println "!!!")
-                  cur-patterns (:patterns (get support-map support))
+            (let [cur-patterns (:patterns (get support-map support))
                   new-patterns (conj cur-patterns (assoc pattern :commit commit))
                   new-pattern-map (assoc (get support-map support) :patterns new-patterns)]
               (recur (first rest-lines) (rest rest-lines) (assoc support-map support new-pattern-map) {} {} 0 commit))

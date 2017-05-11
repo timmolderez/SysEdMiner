@@ -6,7 +6,8 @@
     [arvid.thesis.plugin.clj.git.repository :as repo]
     [arvid.thesis.plugin.clj.strategies.strategyFactory :as stratfac]
     [arvid.thesis.plugin.clj.test.main :as main]
-    [arvid.thesis.plugin.clj.test.output :as output]))
+    [arvid.thesis.plugin.clj.test.output :as output]
+    [arvid.thesis.plugin.clj.util :as util]))
 
 (def tpvision-repos
   ; Retrieve a list of all paths to TP Vision's git repositories (on the local filesystem)
@@ -18,6 +19,9 @@
           (str root-path line))))))
 
 
+
+
+
 (def default-strategy (stratfac/make-strategy))
 (def custom-strategy
     (stratfac/make-strategy 
@@ -25,14 +29,16 @@
       #{:equals-operation-fully? :equals-subject-structurally? :equals-context-path-exact?}))
 (def git-path (nth (tpvision-repos) 30))
 
-(defn average
-  [numbers]
-  (if (= (count numbers) 0)
-    0
-    (/ (apply + numbers) (count numbers)))
-)
-
 (comment
+  
+  (doseq [repo (tpvision-repos)]
+    (let [results (util/search-all-commits (str repo "/..") "ITuningDvbC")]
+      (if (not (empty? results)) 
+        (do 
+          (println "### " repo)
+          (println results)))))
+  
+  (util/search-all-commits (str (second (tpvision-repos)) "/..") "clafddfgss")
   
   (for [repo-path (tpvision-repos)]
     (let [repo-name (main/repo-name-from-path repo-path)]
@@ -41,6 +47,8 @@
           (try 
             (output/generate-sample-systematic-edits repo-path 1)
             (catch Exception e (println "!")))))))
+  
+  (main/open-commit "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/bcepg" "9de9b42e9d4feebeff3d6857c28c8185ceaf6aa4")
   
   ; Count commits for all projects
   (for [repo-path (tpvision-repos)]
@@ -97,8 +105,8 @@
            (reduce (fn [cur y] (+ cur (java.lang.Double/parseDouble y))) 0 (line-seq rdr))) 1000)
   
   ;!!!!!!!!!!!!!!!!!
-  (inspector-jay.core/inspect supp-map)
   
+  ; Produces output .csv files based on mining output files of all repositories
   (let [massive-maps
         (for [repo-path (tpvision-repos)]
         (let [repo-name (main/repo-name-from-path repo-path)]
@@ -118,7 +126,6 @@
                       ))
                   output-map (zipmap (sort (keys supmap)) output)
                   ]
-              ;(println output-map)
               output-map
               ))))
         
@@ -153,8 +160,8 @@
                   output
                   (for [support (sort (keys supmap))]
                     (let [val (get supmap support)
-                          avg (double (average (for [pattern (get val :patterns)]
-                                                 (count (output/changepath-intersection pattern)))))
+                          avg (double (util/average (for [pattern (get val :patterns)]
+                                                      (count (output/changepath-intersection pattern)))))
                           max (apply max (cons 0 (for [pattern (get val :patterns)]
                                                   (count (output/changepath-intersection pattern)))))
                           ]
@@ -178,7 +185,7 @@
                                                          (* (/ (first v1_) new-count) (second v1_))
                                                          (* (/ (first v2) new-count) (second v2)))
                                                
-                                               bad-avg (average [(second v1_) (second v2)])
+                                               bad-avg (util/average [(second v1_) (second v2)])
                                                new-max (max (nth v1_ 2) (nth v2 2))
                                                ]
                                            (assoc current support [new-count new-avg new-max]))
@@ -199,15 +206,11 @@
   
   (doseq [support (sort (keys supp-map))]
     (let [val (get supp-map support)
-;          tmp (println (keys val))
-          avg (double (average (for [pattern (get val :patterns)]
-                                           (let []
-;                                        (println (count (output/changepath-intersection pattern)))
-                                        (count (output/changepath-intersection pattern))))))
+          ;          tmp (println (keys val))
+          avg (double (util/average (for [pattern (get val :patterns)]
+                                      (count (output/changepath-intersection pattern)))))
           max (apply max (for [pattern (get val :patterns)]
-                                      (let []
-;                                        (println (count (output/changepath-intersection pattern)))
-                                        (count (output/changepath-intersection pattern)))))
+                           (count (output/changepath-intersection pattern))))
           ]
       (println support "," (:count val) "," avg "," max)))
   
