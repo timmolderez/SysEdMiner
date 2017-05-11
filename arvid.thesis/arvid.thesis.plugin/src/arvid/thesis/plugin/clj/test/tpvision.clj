@@ -38,8 +38,7 @@
           (println "### " repo)
           (println results)))))
   
-  (util/search-all-commits (str (second (tpvision-repos)) "/..") "clafddfgss")
-  
+  ; Find all commits containing a certain string..
   (for [repo-path (tpvision-repos)]
     (let [repo-name (main/repo-name-from-path repo-path)]
       (if (.exists (clojure.java.io/as-file (str main/output-dir repo-name)))

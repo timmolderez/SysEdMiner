@@ -43,11 +43,10 @@
           (if (empty? cur-path)
             nil
             (let [[property idx] (first cur-path)
-                  child-tmp (astnode/value-unwrapped 
-                              (astnode/ekeko-keyword-for-property-descriptor cur-node property))
+                  child-tmp (util/node-property-value cur-node property) ;(astnode/value-unwrapped (astnode/ekeko-keyword-for-property-descriptor cur-node property))
                   child (if (nil? idx)
                           child-tmp
-                          (nth child-tmp idx))]
+                          (.get child-tmp idx))]
               (if (instance? Statement child)
                 [child idx]
                 (recur child (rest cur-path))))))
@@ -127,8 +126,7 @@
         output-dir (str main/output-dir "/" repo-name "/" repo-name "-" support "-" pattern-no)
         supmap (main/repo-support-map repo-name)
         pattern (nth (:patterns (get supmap support)) pattern-no)
-        commit (:commit pattern)
-        tmp (println "Commit: " commit)]
+        commit (:commit pattern)]
     ; If this sys. edit was already outputted, remove the old version
     (if (.exists (clojure.java.io/as-file output-dir))
       (util/delete-recursively output-dir))

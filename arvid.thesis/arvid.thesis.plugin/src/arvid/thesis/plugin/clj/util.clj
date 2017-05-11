@@ -72,20 +72,12 @@
       (if last-match 
         new-p (recur (subs p (inc colon-idx)) new-p)))))
 
-; TODO
-;(defn node-property-value [node property-name]
-;  (let [all-props (astnode/node-property-descriptors node)
-;        prop (some (fn [prop])
-;                   all-props)]
-;    
-;    
-;    (first (filter (fn [d] (= k (ekeko-keyword-for-property-descriptor d))) 
-;                   (node-property-descriptors n)))
-;    
-;    )
-;  
-;
-;  )
+(defn node-property-value [node property-key]
+  (let [property-name (name property-key)
+        all-props (astnode/node-property-descriptors node)
+        prop (some (fn [prop] (if (= property-name (.getId prop)) prop))
+                   all-props)]
+    (.getStructuralProperty node prop)))
 
 (defn follow-node-path
   "Follow a path produced by get-path-between-nodes, starting from 'node'."
@@ -93,8 +85,8 @@
 ;  (println path)
   (let [[property idx] (first path)
         child-tmp (node-property-value node property) ;(astnode/node-propertykeyword-value|reified node property)
-        _ (inspector-jay.core/inspect node)
-        _ (println (.getProperty node "types"))
+;        _ (inspector-jay.core/inspect node)
+;        _ (println (.getProperty node "types"))
         child (if (nil? idx)
                 child-tmp
                 (.get child-tmp idx)
