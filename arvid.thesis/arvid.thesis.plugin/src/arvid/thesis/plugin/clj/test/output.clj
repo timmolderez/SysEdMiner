@@ -37,25 +37,23 @@
   (let [path (concat container-path change-path)
         change-node (util/follow-node-path ast path)
         
-        [furthest-stmt furthest-stmt-idx]
+        [closest-stmt furthest-stmt furthest-stmt-idx]
         (loop [cur-node ast
-               cur-path path]
+               cur-path path
+               stmts []] ; List of stmt, stmt-index pairs
           (if (empty? cur-path)
-            nil
+            (do
+;              (println stmts)
+              [(first (last stmts)) (first (first stmts)) (second (first stmts))])
             (let [[property idx] (first cur-path)
                   child-tmp (util/node-property-value cur-node property) ;(astnode/value-unwrapped (astnode/ekeko-keyword-for-property-descriptor cur-node property))
                   child (if (nil? idx)
                           child-tmp
                           (.get child-tmp idx))]
-              (if (instance? Statement child)
-                [child idx]
-                (recur child (rest cur-path))))))
-        
-        closest-stmt
-        (loop [cur-node change-node]
-          (if (or (nil? cur-node) (instance? Statement cur-node))
-            cur-node
-            (recur (astnode/owner cur-node))))]
+              (if (and (instance? Statement child) (not (instance? Block child)))
+                (recur child (rest cur-path) (conj stmts [child idx] )) 
+                (recur child (rest cur-path) stmts)))))
+        ]
     [change-path change-node furthest-stmt closest-stmt furthest-stmt-idx]))
 
 (defn show-systematic-instance [repo-path commit pattern instance output-dir]
@@ -64,11 +62,6 @@
         container-type (:container-type instance)
         container-path (util/parse-node-path (:container-path instance))
         container-desc (:container-description instance)
-        
-        
-;        method-split (clojure.string/split method #"\.")
-;        method-name (last method-split)
-;        cls-path (clojure.string/join #"/" (butlast method-split))
         
         file-path (str "src/" (clojure.string/replace container-pkg #"\." "/") "/" container-type ".java")
 
@@ -82,24 +75,32 @@
         
         container (util/follow-node-path ast container-path)
         
-;        method-node (find-method-named ast method-name)
-        
         output-file (str output-dir "/sysedit-" container-desc  ".txt")
         
         stmtno-to-change-info
         (loop [changepaths (vals (:change-paths pattern))
+               changetypes (:change-types pattern)
+               
                info-map {}] ; Maps stmt number to change-paths in that stmt
           (if (empty? changepaths)
             info-map
             
             (let [changepath (util/parse-node-path (first changepaths))
-                  info (info-from-changepath ast container-path changepath)
+                  changetype (first changetypes)
+                  use-ast (case changetype
+                            "insert" ast
+                            "delete" prev-ast
+                            "move" prev-ast
+                            "update" prev-ast)
+                  info (info-from-changepath use-ast container-path changepath)
+                  
                   furthest-stmt-idx (nth info 4)
                   cur-vals (get info-map furthest-stmt-idx)]
               (recur 
                 (rest changepaths)
+                (rest changetypes)
                 (assoc info-map furthest-stmt-idx
-                       (conj cur-vals changepath))))
+                       (conj cur-vals info))))
             
             ))]
     (util/append output-file container-desc)
@@ -108,12 +109,17 @@
             [_ _ furthest-stmt _ furthest-stmt-idx] (first info-list)]
         (util/append output-file (str "---------------------"))
         (doseq [[change-path change-node furthest-stmt closest-stmt furthest-stmt-idx] info-list]
-          (util/append output-file "--ChangePath:")
+          (util/append output-file "\n--ChangeTypes:")
+          (util/append output-file (:change-types pattern))
+          (util/append output-file "\n--ChangePath:")
           (util/append output-file change-path)
-          (util/append output-file "--Node:")
+          (util/append output-file "\n--Node:")
           (util/append output-file (.toString change-node)))
-        (util/append output-file "--Stmt:")
-        (util/append output-file (str furthest-stmt-idx "---" (.toString furthest-stmt)))
+        (util/append output-file "\n--Stmt:")
+        (util/append output-file (str furthest-stmt-idx "--- " (.toString furthest-stmt)))
+        (util/append output-file "\n--Container:")
+        (util/append output-file (.toString container))
+        
         (util/append output-file "")
         (util/append output-file "")
         (util/append output-file diff)))))
@@ -125,6 +131,7 @@
         _ (println repo-name)
         output-dir (str main/output-dir "/" repo-name "/" repo-name "-" support "-" pattern-no)
         supmap (main/repo-support-map repo-name)
+;        _ (inspector-jay.core/inspect supmap)
         pattern (nth (:patterns (get supmap support)) pattern-no)
         commit (:commit pattern)]
     ; If this sys. edit was already outputted, remove the old version
@@ -157,8 +164,10 @@
   (generate-sample-systematic-edits "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/xtv/.git" 2)
   (show-systematic-edit "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/gesturecontrol/.git" 4 2)
   (show-systematic-edit "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git" 3 0)
-
+  (show-systematic-edit "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git" 5 2)
   
+  (generate-sample-systematic-edits "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git" 2)
+
   (let [repo-path "/Volumes/Disk Image/tpv/tpv-extracted/tpvision/./common/app/quicksearchbar/.git"
         supmap (main/repo-support-map "quicksearchbar")
         pattern (first (:patterns (get supmap 3)))

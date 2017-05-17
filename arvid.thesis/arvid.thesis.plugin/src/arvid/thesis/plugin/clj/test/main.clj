@@ -363,6 +363,10 @@
             (let [container (second (clojure.string/split line #":"))]
               (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-type container) support commit))
             
+            (.startsWith line "Container-description")
+            (let [container (second (clojure.string/split line #":"))]
+              (recur (first rest-lines) (rest rest-lines) support-map pattern (assoc instance :container-description container) support commit))
+            
             (.startsWith line "Container-path")
             (let [matcher (re-matcher #"Container-path:(.*)" line)
                   _ (.matches matcher)
@@ -486,15 +490,8 @@
             (fn [index commit]
               (if (.startsWith (.toString (commit-id commit)) "14d63c4")
                 (println index)))
-            all-commits))    
+            all-commits))
 
-;    (println (.indexOf all-commits "14d63c4"))
-;    (count all-commits)
-;    (for [commit all-commits]
-;      (commit-id commit))
-;    (inspector-jay.core/inspect (first all-commits))
-    )
-  
   (count (repo/get-commits "/Users/soft/Documents/Github/calcul_fast_2015/.git/"))
   
   ; Open up several commits in Sublime
