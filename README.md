@@ -9,7 +9,7 @@ Because systematic edits can be tedious and error-prone to perform manually, bei
 - Make informed refactoring decisions
 - Generate transformations/scripts to automate a systematic edit
 
-For more information on how SysEdMiner works, have a look at our [MSR 2017 paper](http://soft.vub.ac.be/Publications/2017/vub-soft-tr-17-04.pdf).
+If you'd like to know more about how SysEdMiner works, have a look at our [MSR 2017 paper](http://soft.vub.ac.be/Publications/2017/vub-soft-tr-17-04.pdf).
 
 ### Installation
 
