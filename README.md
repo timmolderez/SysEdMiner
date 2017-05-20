@@ -9,6 +9,8 @@ Because systematic edits can be tedious and error-prone to perform manually, bei
 - Make informed refactoring decisions
 - Generate transformations/scripts to automate a systematic edit
 
+For more information on how SysEdMiner works, have a look at our [MSR 2017 paper](http://soft.vub.ac.be/Publications/2017/vub-soft-tr-17-04.pdf).
+
 ### Installation
 
 - If you haven't already, first install the [Eclipse](http://www.eclipse.org/) IDE. Note that the chosen Eclipse package should include the Eclipse Plugin Development Environment. (This is the case for e.g. "Eclipse IDE for Java EE Developers" and "Eclipse for RCP and RAP Developers")
