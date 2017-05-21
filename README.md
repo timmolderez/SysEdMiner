@@ -1,7 +1,7 @@
 ![SysEdMiner logo](https://raw.githubusercontent.com/timmolderez/SysEdMiner/master/documents/SysEdMiner.png)
 
 Systematic Edit Miner is an Eclipse plugin that finds "systematic edits", groups of similar code changes, in Java projects.
-There are several different scenarios that involve making several similar changes: 
+There are several different scenarios that involve such systematic edits: 
 making changes to an API, migrating to a different library, refactoring, fixing multiple occurrences of a bug, or performing routine code maintenance tasks.
 
 Because systematic edits can be tedious and error-prone to perform manually, being able to find them in existing projects can be valuable to:
